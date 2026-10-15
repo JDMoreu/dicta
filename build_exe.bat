@@ -3,6 +3,9 @@ setlocal
 cd /d "%~dp0"
 
 set "PY=%~dp0.venv\Scripts\python.exe"
+:: Modelo que viaja en el paquete y usa la app de fabrica. Si no esta aqui, la
+:: app lo descarga sola de HuggingFace en el primer arranque.
+set "BUNDLED_MODEL=ggml-small-q5_1.bin"
 
 if not exist "%PY%" (
     echo [ERROR] No existe el venv: "%PY%"
@@ -33,19 +36,35 @@ if errorlevel 1 (
     exit /b 1
 )
 
-:: Carpeta externa de modelos junto al exe (vacia; los .bin se copian dentro).
+:: El .config de .NET TIENE que quedar al lado del .exe: de ahi saca .NET el
+:: interruptor loadFromRemoteSources, sin el cual clr_loader no puede cargar
+:: Python.Runtime.dll (el fichero cae en la zona Internet/Intranet) y el panel
+:: caeria al respaldo de Chrome. Lo pone ya dicta.spec; esto es un cinturon
+:: extra por si alguien compila a mano sin el spec actualizado.
+if exist "dicta.exe.config" copy /y "dicta.exe.config" "dist\dicta\dicta.exe.config" >nul
+
+:: Modelo de fabrica junto al exe (EXTERNO: no se empaqueta en _internal).
 if not exist "dist\dicta\models" mkdir "dist\dicta\models"
+if exist "models\%BUNDLED_MODEL%" (
+    echo Copiando modelo %BUNDLED_MODEL% ...
+    copy /y "models\%BUNDLED_MODEL%" "dist\dicta\models\" >nul
+) else (
+    echo [AVISO] No esta models\%BUNDLED_MODEL%: el .exe lo descargara solo
+    echo         la primera vez que transcriba algo.
+)
 
 echo.
 echo ============================================================
 echo   Listo:  dist\dicta\dicta.exe
 echo.
-echo   Junto a dicta.exe (EXTERNO, no se empaqueta):
-echo     models\            ^<- copia aqui los *.bin (o dejara descargarlos)
+echo   Al lado del .exe (EXTERNO, no se empaqueta):
+echo     dicta.exe.config   ^<- .NET: loadFromRemoteSources (WebView2)
+echo     models\            ^<- %BUNDLED_MODEL% (los demas se bajan solos)
 echo     dicta_config.json  ^<- se crea solo al ejecutar
 echo     dicta.log / dicta_crash.log / .tmp\  ^<- se crean solos
 echo.
 echo   El bundle (panel\, whisper_bin\, whisper_vulkan\) vive en _internal\.
+echo   Windows 11 limpio: sin Python, sin Chrome y sin instalar nada.
 echo ============================================================
 endlocal
 exit /b 0

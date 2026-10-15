@@ -1816,3 +1816,126 @@ reunion (ganancia, mezclador, `_normalize_wav`, parrafos). Ni `panel/*`,
   Desplazamiento = **+120,+60** (exacto). Sigue funcionando igual.
 
 La app quedo **viva** (`GET /state` 200).
+
+
+## 49. El .exe CONGELADO abre la ventana con WebView2 de verdad (ya no cae a Chrome) y se publica como paquete portable autonomo
+
+**Que pasaba.** Compilado con PyInstaller, dicta arrancaba pero el panel caia
+al respaldo de Chrome: dentro del .exe fallaba `import webview`. El error real,
+cazado con un **binario de sonda congelado** (mismo spec, mismo bundle):
+
+    RuntimeError: Failed to resolve Python.Runtime.Loader.Initialize from
+    ...\_internal\pythonnet\runtime\Python.Runtime.dll
+    (clr_loader\netfx.py, _get_callable: pyclr_get_function devolvia NULL)
+
+**Causa raiz (medida, no supuesta).** `clr_loader` carga `Python.Runtime.dll`
+con `Assembly.LoadFrom`, y .NET Framework se NIEGA a cargar asi un fichero que
+caiga en la zona Internet/Intranet: lanza `NotSupportedException` — «An attempt
+was made to load an assembly from a network location…» (HRESULT 0x80131515) —
+salvo que este habilitado `loadFromRemoteSources`. Medido con
+`System.Security.Policy.Zone.CreateFromUrl`:
+
+    MyComputer | .venv\Lib\site-packages\pythonnet\runtime\Python.Runtime.dll
+    Internet   | cualquier COPIA: _internal\pythonnet\runtime\..., .tmp\*...
+
+Los bytes eran IDENTICOS (mismo sha256 `2ebd4492e28442ef1f1af587afe5b3a0`) y el
+mismo Python del venv resolvia la DLL del bundle cuando ya estaba cargada, o
+sea que **no** era la ruta, ni la version de pythonnet/clr-loader
+(3.2.1 / 0.3.1), ni un binario corrupto, ni el shim de clr_loader: era la ZONA
+del fichero. Y no es un artefacto de este equipo: un ZIP descargado de internet
+deja la marca MOTW en lo que se descomprime, asi que le pasaria igual al usuario
+que se baje la release (por eso el arreglo va en el paquete, no en el equipo).
+
+**Arreglo (4 piezas).**
+- **`dicta.exe.config`**, fichero NUEVO del repo, con
+  `<runtime><loadFromRemoteSources enabled="true"/></runtime>`. .NET lo lee de
+  `<exe>.exe.config`, **al lado del ejecutable**, antes de inicializar el CLR.
+  `dicta.spec` lo coloca en la RAIZ de `dist/dicta` — no en `_internal` —, cosa
+  que COLLECT solo permite con el tipo `'EXECUTABLE'` (todo lo DATA/BINARY va a
+  `_internal`). `build_exe.bat` lo vuelve a copiar por si alguien compila a mano.
+- **`ensure_dotnet_config()`** en `dicta.py`: si el `.config` falta, se escribe
+  al arrancar ANTES de tocar pywebview/pythonnet (best-effort: si la carpeta no
+  es escribible, se registra en el log y el panel usaria el navegador).
+- **`uac_admin=False`** en el spec. Antes el .exe llevaba manifest
+  `requireAdministrator` y **ni arrancaba** desde un proceso sin elevar
+  (CreateProcess error 740); el autor no puede aceptar un UAC. Manifest actual:
+  `asInvoker` (comprobado en los strings del .exe).
+- **Paquete portable**: `build_exe.bat` deja junto al .exe el `.config` y
+  `models\ggml-small-q5_1.bin` (190 085 487 B, el modelo por defecto), de modo
+  que **transcribe de fabrica**; los demas modelos se siguen bajando solos la
+  primera vez (via `ensure_model`, sin cambios).
+
+**Verificacion (MEDIDA).** .exe congelado copiado a una carpeta LIMPIA
+(`.tmp/reltest/dicta`) y lanzado con el entorno saneado (sin `PYTHONPATH`,
+`VIRTUAL_ENV`, `PYTHONHOME`…) y, en el arranque final, con
+`PATH='C:\Windows\system32;C:\Windows'`:
+
+- **Ventana con WebView2 (no Chrome).** Log: `Panel: backend WebView2
+  (pywebview) — ventana sin marco, barra integrada en la página`,
+  `Panel abierto (WebView2, sin barra nativa): http://127.0.0.1:47810/panel`,
+  `Panel: esquinas redondeadas (DWM, Windows 11)`, `Panel: barra integrada
+  inyectada (panel/desktop.js)`. Arbol de procesos: `dicta.exe` (pid 4188) →
+  `msedgewebview2.exe` (pid 13568, `C:\Program Files (x86)\Microsoft\
+  EdgeWebView\Application\155.0.4283.45` = **runtime del sistema**, no se
+  instala nada) y **0 hijos `chrome.exe`**. Por CDP
+  (`DICTA_WEBVIEW_DEBUG_PORT=9333`) el navegador se identifica como
+  `Edg/155.0.4283.45` y sirve la página.
+- **Respaldo en runtime (sin `.config`)**: arrancando una copia LIMPIA a la que
+  le borre `dicta.exe.config`, el log registra `Escrito dicta.exe.config
+  (loadFromRemoteSources…)` a las 14:06:54 y la ventana WebView2 abre igual
+  (`Panel: backend WebView2`, `/state` 200): el .exe se auto-repara si le falta
+  el fichero (p. ej. si alguien copia solo el ejecutable).
+- **`GET /state` → HTTP 200**: `{"version":"1.0","model":"small",
+  "engine":"auto","engine_resolved":"vulkan","language":"es",
+  "status":"Listo para escuchar"}`. Log: `Motor seleccionado: GPU (Vulkan)
+  (auto)` y `Motor GPU (Vulkan) listo.` (calentamiento ya hecho).
+- **Transcripcion REAL de punta a punta.** `POST /upload` (multipart) con
+  `test.flac` (183 318 B, 10 s) → `200 {"ok":true,"saved":1,"names":
+  ["test.flac"], …}`; la cola paso a `listo 100.0` y aparecio el documento
+  **`textos/test.md`** (391 B) con la transcripcion («Me esperaba que hubiera
+  sido stew para el dinner, turnips…») y sus temas, mas el audio en
+  `audios\a1a368a76c.flac`. **Ninguna descarga**: el modelo era el `small` que
+  viaja en el paquete y `models/` no cambio de tamaño ni aparecieron lineas
+  `Descargando …` en el log.
+- **No necesita Python instalado ni el venv.** Corre con `PATH` de system32 y
+  sin variables `PYTHON*`; el interprete viaja dentro
+  (`_internal\python312.dll`, 6 983 144 B) y no hay ningun `python.exe` en su
+  arbol de procesos. Ficheros `.dll`/`.exe`/`.pyd` en el paquete: **95**.
+- **Cierre limpio liberando la VRAM.** `POST {"action":"quit"}` → `200
+  {"ok":true}`; despues **0 procesos** del paquete (el `dicta.exe`, los 6
+  `msedgewebview2.exe` y el `whisper-server.exe` Vulkan que tenia el modelo en
+  la GPU) y `GET /state` → `HTTP 000`. Log: `Cierre limpio (salida): liberando
+  GPU y parando servicios…` y `Cierre limpio: GPU liberada y sin procesos
+  whisper vivos.`
+
+**Tamano del paquete final** (lo que hay que subir a la release):
+
+    dist/dicta/                            392 MB   (1077 ficheros)
+      dicta.exe                          7 741 646 B
+      dicta.exe.config                       1 192 B
+      _internal/                             204 MB  (python312.dll, panel/,
+                                              pythonnet+clr_loader, whisper_bin/
+                                              Release/, whisper_vulkan con
+                                              ggml-vulkan.dll de 57,9 MB, DLLs
+                                              nativas de numpy/soundfile/sounddevice)
+      models/                                182 MB  (ggml-small-q5_1.bin)
+
+    dist/dicta-portable-1.0-windows-x64.zip  249,3 MB  (261 426 552 B)
+
+Un solo fichero, muy por debajo del limite de 2 GB por fichero de una release
+de GitHub. El ZIP se creo con la carpeta limpia (antes del ultimo arranque), asi
+que no lleva datos de ejecucion; al quedar la app viva en `dist/dicta` esa
+carpeta tiene ya `dicta_config.json`, `dicta.log`, `dicta_crash.log`, `.tmp/` y
+`uploads/` (datos de ejecucion, gitignored).
+
+**No se toco:** `panel/*` (la barra sigue llamando `pywebview.api.drag_window()`
+sin argumentos, etc.), `dicta_ui.py`, `dicta_icon.py`, la clase de reunion, los
+5 atajos, `/state` (levels, uploads, engine_options, engine_note, icon_version,
+voice_threshold, silence_wait, rms/thr/voice), `/panel/icon.png`, `/download`,
+`doc.rename`/`doc.delete`, `upload.remove`, `MicTest` y las subidas
+persistentes. Del spec solo cambiaron `uac_admin`, el `.config` de la raiz y los
+comentarios.
+
+La app quedo **viva** (`GET /state` 200), esta vez corriendo el **.exe
+congelado** de `dist/dicta` (sin elevar).
+

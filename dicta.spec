@@ -1,15 +1,32 @@
 # -*- mode: python ; coding: utf-8 -*-
-r"""PyInstaller spec for dicta — onedir, windowed (no console), UAC admin.
+r"""PyInstaller spec for dicta - onedir, windowed (no console), sin UAC.
+
+Dos cosas que NO se pueden tocar sin romper el .exe congelado:
+
+1) `dicta.exe.config` tiene que viajar en la RAIZ de dist/dicta (al lado del
+   .exe), no dentro de _internal: .NET Framework lee <exe>.exe.config para
+   sacar el interruptor loadFromRemoteSources. Sin el, clr_loader no puede
+   cargar Python.Runtime.dll (LoadFrom de un fichero en la zona Internet/
+   Intranet del sistema lanza NotSupportedException) y pywebview no abre: el
+   panel caeria al respaldo de Chrome. COLLECT mete TODO lo DATA/BINARY en
+   _internal, asi que el unico tipo con el que se puede escribir en la raiz es
+   'EXECUTABLE' (ver _extra en COLLECT).
+
+2) `uac_admin` va en False: es una aplicacion de bandeja portable que no
+   necesita permisos de administrador. Con True el .exe ni arranca desde un
+   proceso sin elevar (CreateProcess error 740) y el usuario tendria que
+   aceptar un UAC.
 
 Layout produced:
 
     dist/dicta/
-        dicta.exe            <- runs elevated, no console
+        dicta.exe            <- sin consola y SIN elevacion (portable)
+        dicta.exe.config     <- AL LADO del .exe (lo lee .NET)
         _internal/           <- bundle (sys._MEIPASS)
             panel/           <- served by the internal http.server
             whisper_bin/Release/whisper-cli.exe   (+ ggml*.dll, whisper.dll)
             whisper_vulkan/whisper-server.exe      (+ ggml-vulkan.dll, ...)
-        models/              <- EXTERNAL, next to dicta.exe (817 MB, not bundled)
+        models/              <- EXTERNAL, next to dicta.exe (se copia aparte)
         dicta_config.json    <- EXTERNAL
         dicta.log            <- EXTERNAL
         .tmp/                <- EXTERNAL
@@ -90,7 +107,8 @@ a = Analysis(
 pyz = PYZ(a.pure)
 
 # console=False  -> no console window (equivalent to pythonw)
-# uac_admin=True -> embed manifest requireAdministrator (UAC prompt, elevated)
+# uac_admin=False -> NO pide UAC: app de bandeja portable, arranca desde
+#                    cualquier proceso sin elevar (ver nota de arriba).
 exe = EXE(
     pyz,
     a.scripts,
@@ -109,15 +127,28 @@ exe = EXE(
     entitlements_file=None,
     icon=os.path.join(PROJECT, "dicta.ico") if os.path.isfile(
         os.path.join(PROJECT, "dicta.ico")) else None,
-    uac_admin=True,
+    uac_admin=False,
 )
+
+# El .config de .NET va a la RAIZ de dist/dicta, al lado de dicta.exe: .NET lo
+# busca como <exe>.exe.config y de ahi saca `loadFromRemoteSources`, que es lo
+# que permite a clr_loader cargar Python.Runtime.dll del bundle (LoadFrom de un
+# fichero en la zona Internet/Intranet revienta sin ese interruptor y el panel
+# caeria a Chrome). COLLECT mete todo lo DATA en _internal, asi que el unico
+# tipo que escribe en la raiz es 'EXECUTABLE'.
+_extra = []
+_dotnet_cfg = os.path.join(PROJECT, "dicta.exe.config")
+if os.path.isfile(_dotnet_cfg):
+    _extra.append(("dicta.exe.config", _dotnet_cfg, "EXECUTABLE"))
 
 coll = COLLECT(
     exe,
     a.binaries,
     a.datas,
+    _extra,
     strip=False,
     upx=False,
     upx_exclude=[],
     name="dicta",
 )
+

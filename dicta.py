@@ -3438,6 +3438,52 @@ def _round_window_corners(hwnd, log_ok=True):
     return True
 
 
+_DOTNET_CONFIG = (
+    '<?xml version="1.0" encoding="utf-8"?>\n'
+    "<configuration>\n"
+    "  <runtime>\n"
+    '    <loadFromRemoteSources enabled="true" />\n'
+    "  </runtime>\n"
+    "</configuration>\n"
+)
+
+
+def ensure_dotnet_config():
+    """Deja `<exe>.exe.config` al lado del ejecutable si falta.
+
+    La ventana del panel es pywebview -> pythonnet -> clr_loader, y clr_loader
+    carga `Python.Runtime.dll` con `Assembly.LoadFrom`. .NET Framework LANZA
+    `NotSupportedException` ("An attempt was made to load an assembly from a
+    network location...", HRESULT 0x80131515) cuando el fichero cae en la zona
+    Internet/Intranet del sistema — que es lo que pasa con los ficheros del
+    bundle y con los que se descomprimen de un ZIP bajado de internet (la
+    marca MOTW viaja con el fichero). Sin el interruptor
+    `loadFromRemoteSources`, el .exe congelado no podia cargar pythonnet y el
+    panel caia al respaldo de Chrome.
+
+    .NET lo lee de `<exe>.exe.config`, AL LADO del ejecutable, antes de
+    inicializar el CLR; o sea, antes de que nada importe pywebview aqui. El
+    fichero ya viaja creado en dist/ (lo pone dicta.spec), asi que esto solo
+    cubre el caso de que falte. Best-effort: si no se puede escribir (carpeta
+    de solo lectura) se sigue; el panel usaria el navegador.
+    """
+    if not _frozen():
+        return False
+    path = os.path.join(SCRIPT_DIR, os.path.basename(sys.executable) + ".config")
+    try:
+        if os.path.isfile(path):
+            return True
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(_DOTNET_CONFIG)
+        log(f"Escrito {os.path.basename(path)} (loadFromRemoteSources, para "
+            f"que WebView2 pueda cargar Python.Runtime.dll).")
+        return True
+    except Exception as e:
+        log(f"No se pudo escribir {os.path.basename(path)} ({e}); si WebView2 "
+            f"no arranca, el panel se abrira con el navegador.")
+        return False
+
+
 def panel_backend():
     """Backend de la ventana del panel: "webview" (WebView2) o "chrome".
 
@@ -5315,6 +5361,9 @@ def _wake_running_instance(action="open_panel"):
 
 def main():
     global _crash_log_file, PANEL_ON_START, _mic
+    # ANTES de tocar pywebview/pythonnet: .NET lee <exe>.exe.config al
+    # inicializar el CLR, asi que el interruptor tiene que estar ya en disco.
+    ensure_dotnet_config()
     try:
         _crash_log_file = open(os.path.join(SCRIPT_DIR, "dicta_crash.log"),
                                "w", encoding="utf-8")
