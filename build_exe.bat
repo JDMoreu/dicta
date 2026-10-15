@@ -27,7 +27,9 @@ if errorlevel 1 (
 
 echo Limpiando build\ y dist\ ...
 if exist build rmdir /s /q build
-if exist dist rmdir /s /q dist
+:: Se borra SOLO dist\dicta, nunca dist\ entero: ahi viven los ZIP de release
+:: ya publicados (p. ej. dicta-portable-1.0-windows-x64.zip) que NO se tocan.
+if exist dist\dicta rmdir /s /q dist\dicta
 
 echo Construyendo dicta.exe ...
 "%PY%" -m PyInstaller --noconfirm --clean "dicta.spec"

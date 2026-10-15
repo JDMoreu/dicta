@@ -2033,3 +2033,100 @@ La app quedó **viva** (`GET /state` 200), corriendo el `dicta.py` parcheado con
 el intérprete del venv (`pythonw.exe`, sin elevar), con `paste_mode` = `auto`.
 
 
+
+
+## 51. Reempaquetado portable 1.0.1: el pegado en terminales va DENTRO del `.exe` (verificado de punta a punta)
+
+**Que se hizo.** Recompilar el ejecutable portable con el codigo de AHORA (incluye
+el arreglo del pegado en terminales de la entrada 50) y publicar el paquete
+autonomo `1.0.1`, conservando todo lo que ya funcionaba del `1.0.0` (WebView2 en
+el congelado con `dicta.exe.config`, sin elevacion, modelo `small` embebido, sin
+instalar nada aparte). **No se toco** el ZIP anterior
+(`dist/dicta-portable-1.0-windows-x64.zip`, 261 426 552 B): sigue intacto.
+
+**Compilacion.** Con el venv, por el modulo (el shim `pyinstaller.exe` esta roto):
+`./.venv/Scripts/python.exe -m PyInstaller --noconfirm --clean dicta.spec`
+(PyInstaller **6.22.3**), **16,8 s**. Resultado en `dist/dicta`:
+**1077 ficheros, 408 705 735 B**. Raices: `dicta.exe` (7 745 547 B),
+`dicta.exe.config`, `_internal/` y `models/ggml-small-q5_1.bin`
+(**190 085 487 B**).
+
+`_internal/` lleva `python312.dll`, `whisper.dll`, `ggml-vulkan.dll` (57 946 112 B),
+`whisper_bin/Release/` (motor CPU), `whisper_vulkan/` (`whisper-server.exe`),
+`panel/`, `pythonnet` + `clr_loader`, y las nativas de `numpy`/`soundfile`/
+`sounddevice`. DLLs en la raiz de `_internal`: `python312.dll`, `whisper.dll`,
+`ggml.dll`, `ggml-base.dll`, `ggml-cpu.dll`, `ggml-vulkan.dll`,
+`libcrypto-3-x64.dll`, `libssl-3-x64.dll`, `libffi-8.dll`, `tcl86t.dll`,
+`tk86t.dll`, `MSVCP140.dll`, `VCOMP140.DLL`, `VCRUNTIME140.dll`,
+`VCRUNTIME140_1.dll`.
+
+**`build_exe.bat`** ya no borra `dist\` entero: solo `dist\dicta`, para no
+llevarse por delante los ZIP de release ya publicados que viven en `dist\`.
+
+**Paquete.**
+
+    dist/dicta-portable-1.0.1-windows-x64.zip
+      261 415 062 B  (249,3 MB)
+      sha256  528cde2d4c32f7cd31c635c434afa6f1da6156b47983ff9011eea599a82b3465
+      1077 entradas  ·  testzip (integridad) OK
+
+Dentro va el contenido de `dist/dicta` tal cual: `dicta.exe` + `dicta.exe.config`
++ `_internal/` + `models/`. El `dicta.exe.config` lleva
+`<loadFromRemoteSources enabled="true"/>` (comprobado leyendolo del propio ZIP).
+
+**Verificacion (MEDIDA).**
+
+- **(a) El `.exe` congelado abre con WebView2 desde una carpeta LIMPIA y con el
+  entorno SANEADO.** El ZIP se extrajo a `.tmp/testrun101` y se arranco
+  `dicta.exe` con `PYTHONPATH`, `VIRTUAL_ENV` (y todo lo de Hermes) fuera del
+  entorno. `GET /state` -> **200**; el log dice
+  `Panel: backend WebView2 (pywebview)`; el puerto de depuracion
+  `DICTA_WEBVIEW_DEBUG_PORT=47899` responde
+  `"Browser": "Edg/155.0.4283.45"` -> **WebView2 de verdad** (no Chrome); el log
+  de arranque: `(elevado: no)` -> arranca **sin UAC**.
+- **(b) Transcripcion REAL de un audio, de punta a punta, sin descargar nada.**
+  Se genero una locucion en espanol (SAPI, WAV de 442 028 B) y se subio por
+  `/upload`. El `.exe` congelado la transcribio con el **modelo `small`
+  embebido** (motor Vulkan) y genero `textos/prueba_dicta_101.md` (duracion
+  0:10) con el texto correcto: «La reunion del equipo empieza a las 9 y 30 de la
+  manana. Necesitamos revisar el presupuesto trimestral y confirmar la fecha de
+  entrega del proyecto.». Nada se descargo (todo salio del paquete).
+- **(c) Cierre limpio.** `POST {"action":"quit"}`: `/state` deja de responder, el
+  puerto 47810 se libera y **no queda ningun proceso** (`dicta.exe` ni
+  `whisper-server.exe`). La VRAM dedicada (contadores de Windows) baja de
+  **2 551,6 MB a 1 923,2 MB** -> el modelo sale de la GPU (-628,4 MB).
+- **(d) PEGADO AUTOMATICO EN TERMINALES desde el `.exe` CONGELADO** (lo nuevo,
+  imprescindible). Se abrieron ventanas reales con un lector (`cmd /k` con
+  `set /p` y bash `read` escribiendo a un fichero) y se provoco el pegado con
+  `POST {"action":"test"}` (texto `prueba dicta 123`):
+
+  | ventana destino | clase / .exe | combo elegido (log) | texto recibido |
+  |---|---|---|---|
+  | conhost (`cmd /k`) | `ConsoleWindowClass` / `cmd.exe` | **ctrl+v** | `prueba dicta 123` |
+  | app normal (Tk) | `TkTopLevel` / `pythonw.exe` | **ctrl+v** | `prueba dicta 123` |
+  | Windows Terminal | `CASCADIA_HOSTING_WINDOW_CLASS` / `windowsterminal.exe` | **ctrl+shift+v** | `prueba dicta 123` |
+
+  Log literal del caso terminal:
+  `Pegado (ctrl+shift+v) enviado a [terminal: Windows Terminal [CASCADIA_HOSTING_WINDOW_CLASS / windowsterminal.exe]].`
+  Es decir: en conhost y en apps normales sigue siendo Ctrl+V, y en el emulador
+  de terminal usa **Ctrl+Shift+V** — el arreglo de la entrada 50 viaja dentro del
+  `.exe` congelado.
+- **(e) Contenido e integridad del ZIP.** Contiene `dicta.exe`,
+  `dicta.exe.config`, `_internal/` (con `_internal/panel/index.html`) y
+  `models/ggml-small-q5_1.bin`; **NO** contiene datos del usuario
+  (`audios/`, `textos/`, `uploads/`, `dicta.log`, `dicta_crash.log`,
+  `dicta_config.json`, `.tmp/`, `uploads.json`, `webview-profile`) ni ficheros
+  `.bak`/`.tmp`. `testzip()` no encuentra ninguna entrada corrupta.
+
+Los datos de ejecucion del `.exe` vivo (`dicta_config.json`, `dicta.log`,
+`uploads/`, `.tmp/`) quedan en `dist/dicta` (gitignored), nunca en el ZIP, que se
+creo desde la carpeta recien compilada antes de arrancar nada.
+
+**No se toco:** `panel/*`, `dicta_ui.py`, `dicta_icon.py`, `dicta.py` (el codigo
+es el que se empaqueta tal cual), la clase de reunion, los 5 atajos, `/state`,
+`/download`, `MicTest`, `upload.remove` ni los documentos heredados. Del spec no
+cambio nada. Solo cambiaron `build_exe.bat` (limpieza segura de `dist\`) y este
+`CHANGES.md`.
+
+La app quedo **viva** (`GET /state` 200), esta vez corriendo el **`.exe`
+congelado** de `dist/dicta` (WebView2 `Edg/155.0.4283.45`, sin elevar).
