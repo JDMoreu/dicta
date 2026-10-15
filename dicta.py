@@ -842,8 +842,10 @@ def _send_key_event(vk=0, scan=0, flags=0):
         raise OSError("SendInput falló")
 
 
-def _key(vk: int, up: bool = False):
-    _send_key_event(vk=vk, flags=2 if up else 0)          # KEYEVENTF_KEYUP
+def _key(vk: int, up: bool = False, extended: bool = False):
+    # KEYEVENTF_KEYUP (2) | KEYEVENTF_EXTENDEDKEY (1): Insert es tecla
+    # extendida; sin el bit, algunas apps no la ven como Insert.
+    _send_key_event(vk=vk, flags=(2 if up else 0) | (1 if extended else 0))
 
 
 def clipboard_set(text: str) -> bool:
@@ -1049,7 +1051,7 @@ def _forzar_primer_plano(hwnd) -> bool:
     try:
         _user32.AttachThreadInput.argtypes = [wintypes.DWORD, wintypes.DWORD,
                                               wintypes.BOOL]
-        actual = int(k32.GetCurrentThreadId())
+        actual = int(_kernel32.GetCurrentThreadId())
         primero = int(_user32.GetWindowThreadProcessId(
             _user32.GetForegroundWindow(), None))
         _user32.AttachThreadInput(actual, primero, True)
@@ -1200,20 +1202,185 @@ def start_delivery(text: str, target_hwnd=0, target_title="") -> None:
     threading.Thread(target=worker, daemon=True, name='dicta-uia-delivery').start()
 
 
-def fallback_paste(target_hwnd=0) -> bool:
-    """Pega con Ctrl+V desde el portapapeles; True si envió las teclas."""
+# ---------------------------------------------- pegado segun la ventana
+# En una terminal, Ctrl+V NO pega: el emulador se queda la combinacion (la usa
+# para el modo literal del shell, etc.), asi que el texto no llega y el autor
+# tiene que pulsar Ctrl+Shift+V a mano. La combinacion correcta depende del
+# EMULADOR, no del programa que corre dentro, asi que hay que mirar la ventana
+# destino ANTES de enviar nada:
+#   Windows Terminal (CASCADIA_HOSTING_WINDOW_CLASS) -> Ctrl+Shift+V
+#   conhost clasico (ConsoleWindowClass)             -> Ctrl+V (ya pega)
+#   VS Code / JetBrains / mintty / WezTerm / ...     -> Ctrl+Shift+V
+#   aplicaciones normales                            -> Ctrl+V (como siempre)
+# Respaldo universal cuando algo no encaja o el envio falla: Shift+Insert.
+
+_VK_SHIFT, _VK_INSERT = 0x10, 0x2D
+# Valores aceptados por la opcion configurable `paste_mode` (`auto` = detectar).
+PASTE_MODES = ("auto", "ctrl+v", "ctrl+shift+v", "shift+insert")
+
+# Clases de ventana que son emuladores de terminal (Ctrl+V no pega ahi).
+# conhost va aparte: es el unico emulador donde Ctrl+V SI pega de fabrica.
+_CONHOST_CLASSES = {"consolewindowclass"}
+_TERMINAL_CLASSES = {
+    "cascadia_hosting_window_class": "Windows Terminal",
+    "mintty": "mintty", "mintty-class": "mintty",
+    "alacritty": "Alacritty", "org.alacritty.alacritty": "Alacritty",
+    "wezterm": "WezTerm", "org.wezfurlong.wezterm": "WezTerm",
+    "sunawtframe": "JetBrains", "sunawtdialog": "JetBrains",
+    "virtualconsoleclass": "ConEmu",
+    "tabbywindow": "Tabby",
+    "ghostty": "Ghostty",
+    "rio": "Rio",
+    "fluentterminal": "FluentTerminal",
+    "windowstopmostwindow": "Terminus",
+    "mobaxterm": "MobaXterm",
+}
+
+# Ejecutables que alojan una terminal (la clase sola no basta: VS Code y sus
+# derivados comparten `Chrome_WidgetWin_1` con los navegadores, que SI quieren
+# Ctrl+V). Se compara en minusculas contra el nombre del .exe del proceso.
+_TERMINAL_EXES = {
+    "windowsterminal.exe", "openconsole.exe", "wt.exe",
+    "code.exe", "code - insiders.exe", "cursor.exe", "windsurf.exe",
+    "idea64.exe", "pycharm64.exe", "webstorm64.exe", "goland64.exe",
+    "clion64.exe", "rider64.exe", "datagrip64.exe", "phpstorm64.exe",
+    "rubymine64.exe", "rustrover64.exe", "studio64.exe", "aqua64.exe",
+    "mintty.exe", "alacritty.exe", "wezterm-gui.exe", "wezterm.exe",
+    "conemu64.exe", "conemu.exe", "tabby.exe", "hyper.exe", "kitty.exe",
+    "ghostty.exe", "rio.exe", "mobaxterm.exe", "putty.exe",
+    "fluentterminal.app.exe", "terminus.exe", "warp.exe",
+}
+
+
+def _win_class(hwnd) -> str:
+    """Nombre de clase de la ventana ('' si no se puede leer)."""
     try:
-        if target_hwnd and _user32.GetForegroundWindow() != target_hwnd:
-            _forzar_primer_plano(target_hwnd)
-            time.sleep(0.12)
+        buf = ctypes.create_unicode_buffer(256)
+        if _user32.GetClassNameW(hwnd, buf, 256):
+            return buf.value
+    except Exception:
+        pass
+    return ""
+
+
+def _win_exe(pid) -> str:
+    """Nombre (minusculas) del .exe dueño del PID; '' si no se puede leer."""
+    if not pid:
+        return ""
+    try:
+        k = _kernel32
+        k.OpenProcess.restype = ctypes.c_void_p
+        k.OpenProcess.argtypes = (ctypes.c_uint, wintypes.BOOL, ctypes.c_uint)
+        k.QueryFullProcessImageNameW.restype = wintypes.BOOL
+        k.QueryFullProcessImageNameW.argtypes = (
+            ctypes.c_void_p, ctypes.c_uint, ctypes.c_wchar_p,
+            ctypes.POINTER(wintypes.DWORD))
+        k.CloseHandle.argtypes = (ctypes.c_void_p,)
+        h = k.OpenProcess(0x1000, False, int(pid))   # QUERY_LIMITED_INFORMATION
+        if not h:
+            return ""
+        try:
+            buf = ctypes.create_unicode_buffer(1024)
+            size = wintypes.DWORD(len(buf))
+            if k.QueryFullProcessImageNameW(h, 0, buf, ctypes.byref(size)):
+                return os.path.basename(buf.value).lower()
+        finally:
+            k.CloseHandle(h)
+    except Exception:
+        return ""
+    return ""
+
+
+def _clasificar_destino(hwnd):
+    """('console'|'terminal'|'normal'|'unknown', etiqueta, combo por defecto).
+
+    Mira la ventana destino (clase + .exe del proceso) para decidir con que se
+    pega. La etiqueta va al log: es lo que permite diagnosticar un caso raro.
+    """
+    clase = _win_class(hwnd)
+    pid = _win_pid(hwnd)
+    exe = _win_exe(pid)
+    quien = f"{clase or '?'} / {exe or '?'}"
+    lc = clase.lower()
+    if lc in _CONHOST_CLASSES:
+        # Consola clasica: Ctrl+V ya pega (y Shift+Insert tambien).
+        return "console", quien, "ctrl+v"
+    nombre = _TERMINAL_CLASSES.get(lc)
+    if nombre:
+        return "terminal", f"{nombre} [{quien}]", "ctrl+shift+v"
+    if exe in _TERMINAL_EXES:
+        return "terminal", f"{exe} [{quien}]", "ctrl+shift+v"
+    if not clase and not exe:
+        # No se pudo averiguar NADA de la ventana: pegado mas universal posible.
+        return "unknown", quien, "shift+insert"
+    return "normal", quien, "ctrl+v"
+
+
+def _paste_mode(hwnd):
+    """(modo, etiqueta) de la combinacion a enviar, respetando el forzado.
+
+    `paste_mode` de dicta_config.json manda si no es `auto`: es la valvula para
+    una terminal concreta que se resista a la deteccion.
+    """
+    forzado = str(getattr(app, "paste_mode", "auto") or "auto").strip().lower()
+    if forzado in ("ctrl+v", "ctrl+shift+v", "shift+insert"):
+        tipo, quien, _ = _clasificar_destino(hwnd)
+        return forzado, f"forzado por config ({tipo}: {quien})"
+    tipo, quien, combo = _clasificar_destino(hwnd)
+    return combo, f"{tipo}: {quien}"
+
+
+def _send_combo(mode: str) -> None:
+    """Envia una combinacion de pegado conocida con SendInput."""
+    if mode == "ctrl+v":
         _key(_VK_CTRL)
         _key(_VK_V)
         _key(_VK_V, up=True)
         _key(_VK_CTRL, up=True)
-        log('Pegado (Ctrl+V) enviado.')
+    elif mode == "ctrl+shift+v":
+        _key(_VK_CTRL)
+        _key(_VK_SHIFT)
+        _key(_VK_V)
+        _key(_VK_V, up=True)
+        _key(_VK_SHIFT, up=True)
+        _key(_VK_CTRL, up=True)
+    elif mode == "shift+insert":
+        _key(_VK_SHIFT)
+        _key(_VK_INSERT, extended=True)
+        _key(_VK_INSERT, up=True, extended=True)
+        _key(_VK_SHIFT, up=True)
+    else:
+        raise ValueError(f"modo de pegado desconocido: {mode}")
+
+
+def fallback_paste(target_hwnd=0) -> bool:
+    """Pega desde el portapapeles con la combinacion que acepte la ventana.
+
+    En aplicaciones normales es Ctrl+V, como siempre. En una terminal el
+    emulador se queda Ctrl+V, asi que se manda Ctrl+Shift+V. Si el envio falla
+    o no se reconoce la ventana, se recurre a Shift+Insert, que es el pegado
+    que mas terminales cubren. Devuelve True si envio las teclas.
+    """
+    try:
+        if target_hwnd and _user32.GetForegroundWindow() != target_hwnd:
+            _forzar_primer_plano(target_hwnd)
+            time.sleep(0.12)
+        hwnd = target_hwnd or _user32.GetForegroundWindow()
+        modo, etiqueta = _paste_mode(hwnd)
+        try:
+            _send_combo(modo)
+        except Exception as e:
+            # SendInput bloqueado para el combo elegido: no queda otra que el
+            # respaldo universal.
+            if modo == "shift+insert":
+                raise
+            log(f"Pegado {modo} no se pudo enviar ({e}); pruebo Shift+Insert.")
+            _send_combo("shift+insert")
+            modo = "shift+insert"
+        log(f"Pegado ({modo}) enviado a [{etiqueta}].")
         return True
     except Exception as e:
-        log(f'Pegado automático bloqueado ({e}); pulsa Ctrl+V manualmente.')
+        log(f"Pegado automatico bloqueado ({e}); pulsa el pegado a mano.")
         return False
 
 
@@ -4228,6 +4395,12 @@ class App:
             config_get("voice_threshold", VOICE_THRESHOLD_DEFAULT))
         self.silence_wait = float(
             config_get("silence_wait", SILENCE_TIMEOUT))
+        # Combinacion de pegado: `auto` detecta la ventana (Ctrl+V normal,
+        # Ctrl+Shift+V en terminales); el resto la fuerza (valvula de escape).
+        self.paste_mode = str(
+            config_get("paste_mode", "auto") or "auto").strip().lower()
+        if self.paste_mode not in PASTE_MODES:
+            self.paste_mode = "auto"
         self.language = config_get("language", "es")
         self.prompt = config_get("prompt", "")
         self.dictionary = config_get("dictionary", []) or []
@@ -4812,6 +4985,23 @@ class Overlay:
         config_set("silence_wait", app.silence_wait)
         log(f"Espera antes de transcribir: {app.silence_wait:.2f} s")
 
+    def on_paste_mode(self, value):
+        """Fuerza (o deja en auto) la combinacion del pegado automatico.
+
+        `auto` detecta la ventana destino en cada pegado; `ctrl+v`,
+        `ctrl+shift+v` y `shift+insert` la fuerzan: es la valvula de escape para
+        una terminal que se resista a la deteccion. Persiste en dicta_config.json
+        y se publica en /state.
+        """
+        v = str(value or "auto").strip().lower()
+        if v not in PASTE_MODES:
+            return {"ok": False, "error": "modo invalido",
+                    "paste_mode": getattr(app, "paste_mode", "auto")}
+        app.paste_mode = v
+        config_set("paste_mode", v)
+        log(f"Modo de pegado forzado: {v}")
+        return {"ok": True, "paste_mode": v}
+
     def on_theme(self, name):
         app.theme = "light" if name == "light" else "dark"
         config_set("theme", app.theme)
@@ -5066,6 +5256,7 @@ class Overlay:
                 "language": app.language, "sens": app.sens, "theme": app.theme,
                 "voice_threshold": round(float(app.voice_threshold), 6),
                 "silence_wait": round(float(app.silence_wait), 3),
+                "paste_mode": str(getattr(app, "paste_mode", "auto")),
                 "rms": round(float(getattr(app, "rms", 0.0)), 6),
                 "thr": round(float(getattr(app, "thr", 0.0)), 6),
                 "voice": bool(getattr(app, "rms", 0.0) >
@@ -5161,6 +5352,11 @@ class Overlay:
                     return reply.get(timeout=5.0)
                 except queue.Empty:
                     return {"ok": False, "error": "timeout"}
+        if action == "paste_mode":
+            # POST {action:"paste_mode", value:"auto|ctrl+v|ctrl+shift+v|
+            # shift+insert"}: fuerza la combinacion del pegado automatico para
+            # terminales que no se dejen detectar. Persistente en config.
+            return self.on_paste_mode(value)
         if action == "hide":
             try:
                 self.panel.close()
@@ -5547,6 +5743,7 @@ def main():
             _cfg_disk = {}
         for _k, _v in (("voice_threshold", app.voice_threshold),
                        ("silence_wait", app.silence_wait),
+                       ("paste_mode", getattr(app, "paste_mode", "auto")),
                        ("meeting_stop_key", app.meeting_stop_key_label)):
             if _k not in _cfg_disk:
                 config_set(_k, _v)

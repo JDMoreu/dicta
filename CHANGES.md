@@ -1939,3 +1939,97 @@ comentarios.
 La app quedo **viva** (`GET /state` 200), esta vez corriendo el **.exe
 congelado** de `dist/dicta` (sin elevar).
 
+## 50. El pegado automático ya funciona DENTRO de las terminales: mira la ventana destino y elige Ctrl+V / Ctrl+Shift+V / Shift+Insert
+
+**Que pasaba.** El pegado automático mandaba SIEMPRE `Ctrl+V`. En una terminal
+el emulador se queda esa combinación (la necesita el shell), así que el texto no
+llegaba y el autor tenía que pegar a mano con `Ctrl+Shift+V`. La combinación
+correcta depende del **emulador**, no del programa que corre dentro.
+
+**Arreglo.** Antes de enviar nada, `fallback_paste` clasifica la ventana destino
+con `GetForegroundWindow` + `GetClassNameW` + `GetWindowThreadProcessId` +
+`QueryFullProcessImageNameW` (clase **y** .exe del proceso, nuevos helpers
+`_win_class`, `_win_exe`, `_clasificar_destino`, `_paste_mode`, `_send_combo`) y
+elige la combinación:
+
+- `ConsoleWindowClass` (conhost clásico, cmd/powershell en ventana propia) →
+  `Ctrl+V` (es el único emulador donde Ctrl+V pega de fábrica).
+- Emuladores de terminal (clase `CASCADIA_HOSTING_WINDOW_CLASS` = Windows
+  Terminal, o .exe `code.exe`/`cursor.exe`/`idea64.exe`/`pycharm64.exe`/`mintty.exe`/
+  `wezterm-gui.exe`/`alacritty.exe`/`windowsterminal.exe`/…, porque VS Code y sus
+  derivados comparten `Chrome_WidgetWin_1` con los navegadores) → `Ctrl+Shift+V`.
+- Cualquier otra aplicación → `Ctrl+V`, **como siempre**.
+- Si no se puede leer ni clase ni proceso, o si el envío del combo falla
+  (SendInput bloqueado), se recurre a `Shift+Insert`, que es el pegado que más
+  terminales cubre.
+
+Además:
+
+- **Opción configurable** `paste_mode` en `dicta_config.json`
+  (`auto` por defecto = detectar; `ctrl+v`, `ctrl+shift+v`, `shift+insert` la
+  fuerzan) para una terminal que se resista. Se publica en `/state` como
+  `paste_mode` y se cambia con
+  `POST /rpc {"action":"paste_mode","value":"shift+insert"}` (valores inválidos
+  → `{"ok":false,"error":"modo invalido"}`). Se lee en cada pegado, sin reiniciar.
+- **Log de diagnóstico**: cada pegado registra la clase, el .exe y la
+  combinación usada, p. ej.
+  `Pegado (ctrl+shift+v) enviado a [terminal: Windows Terminal [CASCADIA_HOSTING_WINDOW_CLASS / windowsterminal.exe]].`
+- **Bug latente arreglado** en `_forzar_primer_plano`: usaba un `k32` que no
+  existe (NameError silenciado por el `except`), así que el camino
+  `AttachThreadInput` **nunca** corría y el foco se "restauraba" solo con el Alt
+  simulado. Ahora usa `_kernel32`.
+- `_key` acepta `extended=True` (bit `KEYEVENTF_EXTENDEDKEY`) para enviar
+  `Insert`, que es tecla extendida.
+
+**Verificación (MEDIDA en este equipo).**
+
+- Clases y procesos reales (`EnumWindows` + `GetClassNameW` +
+  `QueryFullProcessImageNameW`) y la combinación que elige el detector:
+
+  | ventana | clase | .exe | tipo | combo |
+  |---|---|---|---|---|
+  | Windows Terminal | `CASCADIA_HOSTING_WINDOW_CLASS` | `windowsterminal.exe` | terminal | **Ctrl+Shift+V** |
+  | consola clásica (cmd) | `ConsoleWindowClass` | `cmd.exe` | console | **Ctrl+V** |
+  | Brave / Hermes / explorador / Tk / panel | `Chrome_WidgetWin_1`, `TkTopLevel`, `CabinetWClass`, … | `brave.exe`, `hermes.exe`, … | normal | **Ctrl+V** |
+
+- **Punta a punta en una terminal de verdad.** Se lanzó una terminal con un
+  programa que captura lo que recibe (`cmd /k` con `set /p` → cada línea a un
+  fichero) y se provocó el pegado automático:
+  - conhost (`ConsoleWindowClass`/`cmd.exe`), combo elegido `ctrl+v`: el fichero
+    recibió `dictado conhost uno`.
+  - **Windows Terminal** (`CASCADIA_HOSTING_WINDOW_CLASS`/`windowsterminal.exe`),
+    combo elegido `ctrl+shift+v`: el fichero recibió
+    `dictado windows terminal dos`.
+  - **La app real** con `POST /rpc {"action":"test"}` y la ventana de Windows
+    Terminal al frente: el log dijo
+    `Pegado (ctrl+shift+v) enviado a [terminal: Windows Terminal [CASCADIA_HOSTING_WINDOW_CLASS / windowsterminal.exe]].`
+    y `Pegado inmediato en 15 ms.`; al pulsar Enter, el fichero de la terminal
+    recibió `prueba dicta 123` (el texto de la prueba de dicta).
+- **Aplicación normal intacta.** `POST {"action":"test"}`… con un campo de texto
+  normal (Entry de Tk) al frente: clasificado `normal: TkTopLevel / python.exe`,
+  combo `ctrl+v`, y el campo recibió `dictado normal app tres`.
+- **Opción forzada.** `POST {"action":"paste_mode","value":"shift+insert"}` →
+  `{"ok":true,"paste_mode":"shift+insert"}`, reflejado en `/state` y en
+  `dicta_config.json`; repetido el pegado contra Windows Terminal, el log dijo
+  `Pegado (shift+insert) enviado a [forzado por config (terminal: Windows Terminal […])]`
+  y el texto llegó. `value:"ctrl+Q"` → `{"ok":false,"error":"modo invalido"}`.
+  Al terminar se dejó en `auto`.
+- **Matiz honesto medido**: en esta versión de Windows Terminal `Ctrl+V`
+  *también* pega (WT lo intercepta), y en conhost cocido `Ctrl+V` pega. Pero en un
+  programa que lee la entrada en crudo dentro de conhost, `Ctrl+V` **no** pega:
+  llega como el byte `0x16` (se comprobó con un lector `msvcrt.getwch`). Es justo
+  el caso de las CLI tipo OpenCode/Claude, y por eso el detector usa
+  `Ctrl+Shift+V` en los emuladores y `Shift+Insert` como respaldo.
+
+**No se tocó:** el pegado en aplicaciones normales (sigue siendo Ctrl+V), el
+cierre limpio con `shutdown_service` (VRAM liberada; comprobado tras `quit`),
+la instancia única, los atajos, `/state` (`levels`, `uploads`,
+`engine_options`, `icon_version`, `voice_threshold`, `silence_wait`,
+`rms`/`thr`/`voice`…), `/panel/icon.png` (200), `/download`,
+`doc.rename`/`doc.delete`, `upload.remove`, `MicTest` ni la clase de reunión.
+Solo cambiaron `dicta.py` y este `CHANGES.md`. Nada depende de elevar.
+
+La app quedó **viva** (`GET /state` 200), corriendo el `dicta.py` parcheado con
+el intérprete del venv (`pythonw.exe`, sin elevar), con `paste_mode` = `auto`.
+
+
