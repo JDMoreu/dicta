@@ -1,0 +1,39 @@
+# Temporales de ejecución (perfil del panel, wav de paso)
+.tmp/
+
+# Bytecode y cachés de Python
+__pycache__/
+*.py[cod]
+
+# Registros que escribe la app
+*.log
+dicta.log
+dicta_crash.log
+
+# Salidas de compilación (PyInstaller)
+build/
+dist/
+
+# Datos del usuario (no se versionan; se quedan en el disco)
+audios/
+textos/
+uploads/
+
+# Entorno virtual de Python
+.venv/
+venv/
+
+# Modelos de whisper: pesados y descargables (large-v3-turbo = 574 MB)
+# La app los baja sola desde HuggingFace la primera vez.
+models/
+*.bin
+
+# Binarios de los motores de transcripción (whisper.cpp y sus DLLs)
+whisper_bin/
+whisper_vulkan/
+whisper_cuda/
+
+# Basura del sistema operativo
+Thumbs.db
+desktop.ini
+.DS_Store

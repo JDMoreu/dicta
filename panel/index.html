@@ -1,0 +1,766 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>dicta — Ajustes</title>
+<!-- La barra de título NATIVA en modo aplicación la pinta Chrome a partir de
+     color-scheme + este color. Se actualiza por JS en cada cambio de tema con
+     el token --bg (claro #F2F2F5, oscuro #141418). -->
+<meta name="theme-color" content="#F2F2F5">
+<!-- Icono de la pestaña: el MISMO dibujo que la bandeja y el .exe, servido
+     por la app (sin esto Chrome pide /favicon.ico y el servidor devuelve 404).
+     Antes era un SVG en línea dibujado a mano, distinto del icono real. -->
+<link rel="icon" id="favIcon" type="image/png" href="/panel/icon.png?size=32&v=1">
+<link rel="stylesheet" href="/panel/style.css">
+</head>
+<body>
+<div class="shell">
+
+  <!-- ============================== cabecera ==============================
+       La barra propia de la ventana (panel/desktop.js, con el backend
+       WebView2) SUSTITUYE a esta cabecera: pone el icono de la app, el nombre
+       «Dicta» y esta misma pil de estado, y mueve aquí el nodo #status. Por eso
+       la cabecera ya no lleva título/subtítulo ni el interruptor de tema (el
+       tema se elige en Apariencia, #themeSeg): con la barra presente el
+       contenido tiene que empezar donde empieza el raíl, sin huecos. Con el
+       backend de Chrome (sin barra inyectada) esta cabecera se ve tal cual,
+       bajo la barra nativa de Windows. -->
+  <header class="app-head">
+    <span class="brand" data-icon="wave" data-size="19"></span>
+    <div class="status" id="status">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText" data-i18n="ui.statusReady">Listo para escuchar</span>
+    </div>
+  </header>
+
+  <div class="app-body">
+
+    <!-- ============= raíl: 7 secciones, una a la vista ============= -->
+    <nav class="rail" id="rail" data-i18n-aria="ui.sections" aria-label="Secciones de ajustes">
+
+      <button class="rail-item" type="button" data-sec="dictado" aria-current="true">
+        <span class="ri" data-icon="mic" data-size="17"></span>
+        <span data-i18n="ui.secDictation">Dictado</span>
+      </button>
+
+      <button class="rail-item" type="button" data-sec="diccionario">
+        <span class="ri" data-icon="book" data-size="17"></span>
+        <span data-i18n="ui.dict">Diccionario</span>
+        <span class="cnt" id="dictCount" hidden></span>
+      </button>
+
+      <button class="rail-item" type="button" data-sec="reunion">
+        <span class="ri" data-icon="users" data-size="17"></span>
+        <span data-i18n="ui.meeting">Reunión</span>
+      </button>
+
+      <button class="rail-item" type="button" data-sec="audios">
+        <span class="ri" data-icon="file-audio" data-size="17"></span>
+        <span data-i18n="ui.audios">Audios</span>
+        <span class="cnt" id="queueCount" hidden></span>
+      </button>
+
+      <button class="rail-item" type="button" data-sec="documentos">
+        <span class="ri" data-icon="file-text" data-size="17"></span>
+        <span data-i18n="ui.docs">Documentos</span>
+        <span class="cnt" id="docsCount" hidden></span>
+      </button>
+
+      <button class="rail-item" type="button" data-sec="atajos">
+        <span class="ri" data-icon="keyboard" data-size="17"></span>
+        <span data-i18n="ui.shortcuts">Atajos de teclado</span>
+      </button>
+
+      <button class="rail-item" type="button" data-sec="apariencia">
+        <span class="ri" data-icon="sun" data-size="17"></span>
+        <span data-i18n="ui.appearance">Apariencia</span>
+      </button>
+
+      <div class="rail-foot">
+        <b data-i18n="ui.engineState">Motor</b>
+        <span id="engineState">&mdash;</span>
+      </div>
+    </nav>
+
+    <!-- ===================== secciones (una visible) ===================== -->
+    <main class="pane" id="pane">
+
+      <!-- --------------------------- 1 · DICTADO --------------------------- -->
+      <section data-sec="dictado">
+        <div class="pane-head">
+          <h2 data-i18n="ui.secDictation">Dictado</h2>
+          <p data-i18n="ui.secDictationHint">Lo que se usa cuando pulsas el atajo</p>
+        </div>
+
+        <div class="group">
+          <div class="g-head">
+            <h3 data-i18n="ui.grpRecognition">Reconocimiento</h3>
+            <span class="hint" data-i18n="ui.grpRecognitionHint">se aplica al siguiente dictado, sin reiniciar</span>
+          </div>
+
+          <div class="row">
+            <span class="tile accent" data-icon="globe" data-size="16"></span>
+            <div class="txt">
+              <b data-i18n="ui.language">Idioma</b>
+              <span class="sub" data-i18n="ui.languageHint">Reconocimiento e interfaz</span>
+            </div>
+            <div class="ctl sel">
+              <div class="select-wrap">
+                <select id="selLang" data-i18n-aria="ui.language" aria-label="Idioma"></select>
+                <span class="chev" data-icon="chevron-down" data-size="14" data-sw="2.2"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="row">
+            <span class="tile accent" data-icon="chip" data-size="16"></span>
+            <div class="txt">
+              <b data-i18n="ui.engine">Motor</b>
+              <span class="sub" id="engineHint">&nbsp;</span>
+            </div>
+            <div class="ctl sel">
+              <div class="select-wrap">
+                <select id="selEngine" data-i18n-aria="ui.engine" aria-label="Motor"></select>
+                <span class="chev" data-icon="chevron-down" data-size="14" data-sw="2.2"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="row">
+            <span class="tile accent" data-icon="layers" data-size="16"></span>
+            <div class="txt">
+              <b data-i18n="ui.model">Modelo</b>
+              <span class="sub" data-i18n="ui.modelHint">Precisión frente a velocidad</span>
+            </div>
+            <div class="ctl sel">
+              <div class="select-wrap">
+                <select id="selModel" data-i18n-aria="ui.model" aria-label="Modelo"></select>
+                <span class="chev" data-icon="chevron-down" data-size="14" data-sw="2.2"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Espera antes de transcribir: UN título con su icono, la explicación en
+             una línea y, debajo, los botones de segundos + la cantidad libre.
+             El autor pidió quitar el subtítulo redundante y los textos de relleno
+             (el rango válido vive en el title del campo, no en otra línea). -->
+        <div class="group" id="waitGroup">
+          <div class="g-head wait-head">
+            <span class="tile accent" data-icon="timer" data-size="16"></span>
+            <div class="txt">
+              <b data-i18n="ui.grpWait">Espera antes de transcribir</b>
+              <span class="sub" data-i18n="ui.waitHint">el silencio que espera antes de cerrar la frase</span>
+            </div>
+            <span class="val" id="waitValue">1 s</span>
+          </div>
+          <div class="row-body wait-body">
+            <div class="presets" id="waitPresets" role="group"
+                 data-i18n-aria="ui.waitPresets" aria-label="Espera rápida"></div>
+            <div class="input-row wait-row">
+              <label class="wait-lab" for="waitInput" data-i18n="ui.waitCustom">Otra cantidad</label>
+              <input id="waitInput" type="text" inputmode="decimal" autocomplete="off"
+                     spellcheck="false" data-i18n-ph="ui.waitCustom"
+                     data-i18n-title="ui.waitRange" placeholder="Otra cantidad">
+              <span class="wait-unit" data-i18n="ui.waitUnitS">segundos</span>
+            </div>
+            <p class="hk-error" id="waitError" hidden></p>
+          </div>
+        </div>
+
+        <!-- Micrófono: TODO lo del micro vive en UN solo grupo. Aquí va el
+             DISPOSITIVO que se usa al dictar, y debajo su umbral (sensibilidad),
+             la prueba de entrada y la escucha de lo grabado. Antes el
+             dispositivo estaba en «Reconocimiento» y el grupo se titulaba
+             «Micrófono»: el autor veía «dos micrófonos». -->
+        <div class="group" id="micGroup">
+          <div class="g-head">
+            <h3 data-i18n="ui.mic">Micrófono</h3>
+            <span class="hint" data-i18n="ui.micGroupHint">dispositivo, umbral y prueba de entrada</span>
+          </div>
+
+          <div class="row">
+            <span class="tile accent" data-icon="mic" data-size="16"></span>
+            <div class="txt">
+              <b data-i18n="ui.micDevice">Dispositivo de entrada</b>
+              <span class="sub" data-i18n="ui.micHint">El que se usa al dictar</span>
+            </div>
+            <div class="ctl sel">
+              <div class="select-wrap">
+                <select id="selMic" data-i18n-aria="ui.micDevice" aria-label="Dispositivo de entrada"></select>
+                <span class="chev" data-icon="chevron-down" data-size="14" data-sw="2.2"></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- ENTRADA Y UMBRAL: UN SOLO control integrado. Antes eran dos
+               deslizadores sueltos (sensibilidad y umbral) que movían lo mismo y
+               no dejaban ver cómo se graduaba nada.
+                 · Izquierda: medidor VERTICAL de barras con el nivel de entrada
+                   EN VIVO (/state.rms) sobre una escala en dB, y la MARCA del
+                   umbral ARRASTRABLE (sube/baja para fijar el umbral del
+                   detector de voz).
+                 · Derecha: el nivel de voz EN HORIZONTAL con su estado.
+               La sensibilidad ya no es un mando aparte: el umbral que se fija
+               aquí ES el que usa el detector (thr = umbral / sensibilidad), así
+               que se gradúa en un sitio, con la escala a la vista y el valor
+               real en dBFS. -->
+          <div class="row stack" id="micLevelRow">
+            <div class="row-top">
+              <span class="tile accent" data-icon="sliders" data-size="16"></span>
+              <div class="txt">
+                <b data-i18n="ui.levelTitle">Entrada y umbral</b>
+                <span class="sub" data-i18n="ui.levelHint">Arrastra la marca para fijar el umbral: tu voz se oye cuando sube por encima.</span>
+              </div>
+              <span class="meter-state" id="micMeterState" data-state="quiet"
+                    data-i18n="ui.micNoVoice">Sin voz</span>
+            </div>
+            <div class="row-body">
+              <div class="mic-integrated">
+                <div class="vmeter-wrap">
+                  <div class="vmeter" id="micMeter" data-state="quiet" role="slider" tabindex="0"
+                       aria-valuemin="0" aria-valuemax="100" aria-valuenow="30"
+                       data-i18n-aria="ui.sensPeak" aria-label="Umbral de voz">
+                    <div class="vmeter-bars" id="micMeterBars" aria-hidden="true"></div>
+                    <span class="vmeter-thr" id="micMeterThr"><i></i></span>
+                  </div>
+                  <div class="vscale" id="micScale" aria-hidden="true"></div>
+                </div>
+                <div class="hlevel">
+                  <div class="hlevel-head">
+                    <b data-i18n="ui.liveVoice">Nivel de voz</b>
+                    <span class="hlevel-val" id="micMeterVal">&mdash;</span>
+                  </div>
+                  <div class="hmeter" id="liveMeter" data-state="quiet" aria-hidden="true">
+                    <span class="hmeter-fill" id="liveMeterFill"></span>
+                    <span class="hmeter-thr" id="liveMeterThr"></span>
+                  </div>
+                  <div class="hscale-row" id="liveScale" aria-hidden="true"></div>
+                </div>
+              </div>
+              <p class="meter-note" id="micThrNote">&nbsp;</p>
+            </div>
+          </div>
+
+          <!-- Prueba de micrófono: UNA SOLA fila (icono + texto + acciones + lo
+               grabado). El botón «Probar» arranca la captura; al terminar, ESTA
+               MISMA fila muestra el play de lo grabado y su duración
+               («00:00 / 00:05»). Sin barra de nivel en vivo: la entrada ya se ve
+               en el medidor de umbral de arriba. Mismo raíl que el resto del
+               grupo. -->
+          <div class="row" id="micProbe">
+            <span class="tile accent" data-icon="mic" data-size="16"></span>
+            <div class="txt">
+              <b id="micTestTitle" data-i18n="ui.testRowTitle">Probar la entrada</b>
+              <span class="sub" id="micTestMsg" data-i18n="ui.testRowHint">Habla con voz normal para comprobar la entrada.</span>
+            </div>
+
+            <!-- lo grabado (/panel/mictest.wav): play + duración, en la MISMA
+                 fila, solo al terminar la prueba -->
+            <div class="mic-ctl" id="micTestPlayer" hidden>
+              <div class="pv-slot" id="micTestSlot"></div>
+            </div>
+
+            <!-- acciones de la prueba (solo con la prueba abierta): detener /
+                 repetir y cerrar -->
+            <div class="mic-ctl" id="micTest" hidden>
+              <button class="btn btn-soft btn-icon btn-sm" type="button" id="micTestAct"
+                      data-icon="stop" data-size="13"
+                      data-i18n-aria="ui.testStop" data-i18n-title="ui.testStop"></button>
+              <button class="btn btn-ghost btn-icon btn-sm" type="button" id="micTestClose"
+                      data-icon="x" data-size="14"
+                      data-i18n-aria="ui.docClose" data-i18n-title="ui.docClose"></button>
+            </div>
+
+            <div class="ctl">
+              <button class="btn btn-soft btn-icon btn-sm" type="button" id="micTestGo"
+                      data-icon="play" data-size="15"
+                      data-i18n-aria="ui.testStart" data-i18n-title="ui.testStart"></button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ------------------------- 2 · DICCIONARIO ------------------------- -->
+      <section data-sec="diccionario" hidden>
+        <div class="pane-head">
+          <h2 data-i18n="ui.dict">Diccionario</h2>
+          <p data-i18n="ui.dictPaneHint">Va como prompt en cada dictado: mejora nombres propios y jerga</p>
+        </div>
+
+        <div class="group">
+          <div class="g-head">
+            <h3 data-i18n="ui.dictTerms">Términos</h3>
+            <span class="hint" data-i18n="ui.dictHint">Términos y nombres propios</span>
+          </div>
+          <div class="row stack">
+            <div class="input-row dict-input-row">
+              <textarea id="dictInput" rows="1" autocomplete="off" spellcheck="false"
+                     data-i18n-ph="ui.dictPlaceholder" placeholder="Escribe o pega palabras (coma o salto de línea) y pulsa Intro"></textarea>
+              <button class="btn btn-soft btn-icon" type="button" id="btnAdd"
+                      data-icon="plus" data-size="16"
+                      data-i18n-aria="ui.dictAdd" data-i18n-title="ui.dictAdd"></button>
+            </div>
+            <p class="hint" data-i18n="ui.dictMultiHint">Pega varias palabras separadas por coma o por salto de línea: se añaden todas de una vez.</p>
+            <div class="chips" id="chips"></div>
+            <div class="state" id="dictEmpty">
+              <span class="st-ico" data-icon="book" data-size="20"></span>
+              <p data-i18n="ui.dictEmpty">Aún no hay palabras. Añade términos que dictas a menudo.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="group">
+          <div class="g-head">
+            <h3 data-i18n="ui.dictHow">Cómo se usa</h3>
+          </div>
+          <div class="row">
+            <span class="tile accent" data-icon="sparkle" data-size="16"></span>
+            <div class="txt">
+              <b data-i18n="ui.dictPrompt">Prompt de reconocimiento</b>
+              <span class="sub" data-i18n="ui.dictPromptHint">Se manda junto al audio en cada dictado</span>
+            </div>
+          </div>
+          <div class="row">
+            <span class="tile accent" data-icon="folder" data-size="16"></span>
+            <div class="txt">
+              <b data-i18n="ui.dictStored">Se guarda en dicta_config.json</b>
+              <span class="sub" data-i18n="ui.dictStoredHint">Junto a la aplicación, legible y editable a mano</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- --------------------------- 3 · REUNIÓN --------------------------- -->
+      <section data-sec="reunion" hidden>
+        <div class="pane-head">
+          <h2 data-i18n="ui.meeting">Reunión</h2>
+          <p data-i18n="ui.meetingHint">Sistema + micrófono, grabado en .wav</p>
+        </div>
+
+        <div class="group">
+          <div class="g-head">
+            <h3 data-i18n="ui.meetSource">Fuente de audio</h3>
+            <span class="hint" data-i18n="ui.meetSourceHint">De dónde se captura el audio</span>
+          </div>
+
+          <!-- leyenda del indicador: va justo bajo el encabezado para que siga
+               visible con el desplegable abierto -->
+          <div class="src-legend">
+            <span class="src-dot on" aria-hidden="true"></span>
+            <span data-i18n="ui.srcLegendOn">Sonando ahora</span>
+            <span class="src-dot" aria-hidden="true"></span>
+            <span data-i18n="ui.srcLegendOff">En silencio</span>
+          </div>
+
+          <div class="row">
+            <span class="tile accent" data-icon="speaker" data-size="16"></span>
+            <div class="txt">
+              <div class="select-wrap">
+                <select id="selSource" data-i18n-aria="ui.meetSource" aria-label="Fuente de audio"></select>
+                <span class="chev" data-icon="chevron-down" data-size="14" data-sw="2.2"></span>
+              </div>
+            </div>
+            <div class="ctl"><span class="src-dot" id="srcDot" aria-hidden="true"></span></div>
+          </div>
+
+          <div class="row">
+            <span class="tile accent" data-icon="mic" data-size="16"></span>
+            <div class="txt">
+              <b data-i18n="ui.meetMic">Grabar también mi micrófono</b>
+              <span class="sub" data-i18n="ui.meetMicHint">Mezcla tu voz con el audio del sistema</span>
+            </div>
+            <div class="ctl">
+              <span class="switch-state" id="meetMicState"></span>
+              <button class="switch" type="button" id="meetMicSwitch" role="switch" aria-checked="true"
+                      data-i18n-aria="ui.meetMic" aria-label="Grabar también mi micrófono">
+                <span class="sw-thumb" aria-hidden="true"></span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- hub de grabación: inicio / en vivo / resumen -->
+        <div class="group" id="meet">
+          <div class="meet-hero" id="meetIdle">
+            <div class="meet-hero-row">
+              <span class="tile accent" data-icon="users" data-size="16"></span>
+              <div class="txt">
+                <b data-i18n="ui.meetTitle">Inicia la grabación de la reunión</b>
+                <span class="sub" data-i18n="ui.meetDesc">Captura el audio del sistema y del micrófono, guarda la grabación en .wav y transcribe en vivo.</span>
+              </div>
+              <button class="btn btn-primary btn-lg btn-icon" type="button" id="btnMeeting"
+                      data-icon="play" data-size="17" data-sw="2"
+                      data-i18n-aria="ui.startMeeting" data-i18n-title="ui.startMeeting"></button>
+            </div>
+            <p class="meet-status" id="meetStatus"></p>
+          </div>
+
+          <div class="row stack" id="meetLive" hidden>
+            <div class="meet-live-head">
+              <span class="rec-pill" id="recPill">
+                <span class="rec-dot" aria-hidden="true"></span>
+                <span data-i18n="ui.rec">REC</span>
+              </span>
+              <span class="meet-timer" id="meetTimer">00:00</span>
+              <span class="spacer"></span>
+              <button class="btn btn-soft btn-icon" type="button" id="btnMeetPause"
+                      data-icon="pause" data-size="15"
+                      data-i18n-aria="ui.pause" data-i18n-title="ui.pause"></button>
+              <button class="btn btn-primary btn-icon" type="button" id="btnMeetStop"
+                      data-icon="stop" data-size="14"
+                      data-i18n-aria="ui.meetSave" data-i18n-title="ui.meetSave"></button>
+              <button class="btn btn-danger btn-icon meet-cancel" type="button" id="btnMeetCancel"
+                      data-icon="x" data-size="15"
+                      data-i18n-aria="ui.meetCancel" data-i18n-title="ui.meetCancel"></button>
+            </div>
+            <div class="meet-live-body">
+              <!-- Niveles de la grabación: una PISTA viva por barra, con nombre y
+                   su punto. Cada pista es EL MISMO medidor de nivel que usa el
+                   dictado (`.hmeter`/`hmeter-fill`): la barra sube y baja con la
+                   energía real que manda el backend (levels.sys / levels.mic),
+                   en el mismo azul de acento (y en verde al captar voz), para
+                   que todo el ecosistema se sienta igual. -->
+              <div class="meet-levels">
+                <div class="meet-level">
+                  <span class="lv-lab sys"><span class="lv-dot" aria-hidden="true"></span><span data-i18n="ui.lvSys">Sistema</span></span>
+                  <div class="hmeter meet-meter" id="lvSys" data-state="quiet" aria-hidden="true">
+                    <span class="hmeter-fill"></span>
+                  </div>
+                </div>
+                <div class="meet-level lv-mic">
+                  <span class="lv-lab mic"><span class="lv-dot" aria-hidden="true"></span><span data-i18n="ui.lvMic">Micrófono</span></span>
+                  <div class="hmeter meet-meter" id="lvMic" data-state="quiet" aria-hidden="true">
+                    <span class="hmeter-fill"></span>
+                  </div>
+                </div>
+              </div>
+              <p class="meet-live-note" data-i18n="ui.meetLiveNote">Se graba en .wav y se transcribe en vivo mientras hablas.</p>
+              <div class="meet-tr">
+                <span class="meet-tr-lab" data-i18n="ui.meetLiveTr">Transcripción en vivo</span>
+                <p class="meet-transcript" id="meetTranscript"></p>
+              </div>
+              <p class="meet-err" id="meetErr" hidden></p>
+            </div>
+          </div>
+
+          <div class="row stack meet-done" id="meetDone" hidden>
+            <span class="tile ok meet-mark-lg" data-icon="check" data-size="24" data-sw="1.8"></span>
+            <b class="meet-done-t" id="meetDoneText"></b>
+            <div class="pv-slot" id="meetWav"></div>
+            <div class="input-row meet-done-acts">
+              <button class="btn btn-soft btn-icon" type="button" id="btnMeetOpenDoc"
+                      data-icon="external-link" data-size="15"
+                      data-i18n-aria="ui.meetOpen" data-i18n-title="ui.meetOpen"></button>
+              <button class="btn btn-soft btn-icon" type="button" id="btnMeetDlWav"
+                      data-icon="download" data-size="15"
+                      data-i18n-aria="ui.meetDl" data-i18n-title="ui.meetDl"></button>
+              <button class="btn btn-ghost btn-icon" type="button" id="btnMeetDismiss"
+                      data-icon="x" data-size="15"
+                      data-i18n-aria="ui.docClose" data-i18n-title="ui.docClose"></button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------------------------- 4 · AUDIOS ---------------------------- -->
+      <section data-sec="audios" hidden>
+        <div class="pane-head">
+          <h2 data-i18n="ui.audios">Audios</h2>
+          <p data-i18n="ui.audiosHint">Sube audio, vídeo o lo que sea: se guarda y se transcribe</p>
+        </div>
+
+        <!-- La carta GRANDE es solo para AÑADIR. Cada fichero ya subido vive
+             FUERA de ella, en su propia ficha (abajo), con el mismo lenguaje de
+             tarjetas que Documentos: se ve que es un archivo aparte y guardado. -->
+        <div class="group">
+          <div class="g-head">
+            <h3 data-i18n="ui.addAudio">Añadir audios</h3>
+            <span class="hint" data-i18n="ui.addAudioHint">wav, flac, ogg; mp3 y m4a si hay ffmpeg</span>
+          </div>
+
+          <div class="row">
+            <span class="tile accent" data-icon="upload" data-size="16"></span>
+            <div class="txt">
+              <b data-i18n="ui.addAudioPick">Elegir archivos…</b>
+              <span class="sub" data-i18n="ui.addAudioPickHint">Se guarda una copia y se queda en tus ficheros subidos</span>
+            </div>
+            <div class="ctl">
+              <span class="hint" id="pickInfo"></span>
+              <input id="audioFiles" type="file" multiple hidden
+                     accept="audio/*,video/*,.wav,.flac,.ogg,.mp3,.m4a,.aac,.wma,.opus,.mp4,.mkv,.mov,.webm,.avi">
+              <button class="btn btn-soft btn-icon" type="button" id="btnPickAudio"
+                      data-icon="plus" data-size="16"
+                      data-i18n-aria="ui.pickFiles" data-i18n-title="ui.pickFiles"></button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Ficheros subidos: una FICHA por archivo, suelta sobre el fondo
+             (sin caja contenedora), igual que las tarjetas de Documentos.
+             Aquí no se descarga nada: el fichero ya es del usuario. La acción
+             es QUITAR de la lista y, si ya hay transcripción, ir a su documento. -->
+        <div class="zone-head">
+          <h3 data-i18n="ui.uploads">Ficheros subidos</h3>
+          <span class="hint" data-i18n="ui.uploadsHint">Se guardan en la carpeta audios</span>
+        </div>
+        <div class="docs-wrap">
+          <div class="docs" id="uploads"></div>
+          <div class="state" id="uploadsEmpty">
+            <span class="st-ico" data-icon="file-audio" data-size="20"></span>
+            <p data-i18n="ui.uploadsEmpty">Aún no has subido ningún fichero.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- -------------------------- 5 · DOCUMENTOS -------------------------- -->
+      <section data-sec="documentos" hidden>
+        <div class="pane-head">
+          <h2 data-i18n="ui.docs">Documentos</h2>
+          <p data-i18n="ui.docsHint">Revisa, edita y descarga</p>
+        </div>
+
+        <!-- Todo lo de un documento (ver la transcripción, descargar .md/.txt, el
+             audio, renombrar, eliminar y cerrar) vive DENTRO de su propia tarjeta
+             (el acordeón de .d-item). Antes, pulsar el nombre abría aquí una
+             segunda carta con el editor y repetía la transcripción: esa vista
+             duplicada se ha RETIRADO. -->
+        <div class="docs-wrap">
+          <div class="docs" id="docs"></div>
+          <div class="state" id="docsEmpty">
+            <span class="st-ico" data-icon="file-text" data-size="20"></span>
+            <p data-i18n="ui.docsEmpty">Aún no hay documentos.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------------------------- 6 · ATAJOS ---------------------------- -->
+      <section data-sec="atajos" hidden>
+        <div class="pane-head">
+          <h2 data-i18n="ui.shortcuts">Atajos de teclado</h2>
+          <p data-i18n="ui.shortcutsHint">Se aplican en caliente, sin reiniciar</p>
+        </div>
+
+        <div class="group">
+          <div class="g-head">
+            <h3 data-i18n="ui.grpKeys">Combinaciones</h3>
+            <span class="hint" data-i18n="ui.grpKeysHint">pulsa «Cambiar» y luego la combinación</span>
+          </div>
+
+          <div class="row">
+            <span class="tile accent" data-icon="mic" data-size="16"></span>
+            <div class="txt">
+              <b data-i18n="ui.dictateKey">Dictado</b>
+              <span class="sub" data-i18n="ui.dictateHint">Inicia y para la escucha</span>
+            </div>
+            <div class="ctl">
+              <kbd id="hotkeyValue" role="button" tabindex="0">Alt + Q</kbd>
+              <button class="btn btn-soft btn-sm btn-icon" type="button" id="btnChangeKey"
+                      data-icon="keyboard" data-size="14"
+                      data-i18n-aria="ui.ttChangeDictate" data-i18n-title="ui.ttChangeDictate"></button>
+            </div>
+          </div>
+
+          <div class="row">
+            <span class="tile accent" data-icon="x" data-size="16"></span>
+            <div class="txt">
+              <b data-i18n="ui.cancelKey">Cancelar dictado</b>
+              <span class="sub" data-i18n="ui.cancelHint">Descarta lo dictado en curso</span>
+            </div>
+            <div class="ctl">
+              <kbd id="cancelKeyValue" role="button" tabindex="0">Alt + E</kbd>
+              <button class="btn btn-soft btn-sm btn-icon" type="button" id="btnChangeCancel"
+                      data-icon="keyboard" data-size="14"
+                      data-i18n-aria="ui.ttChangeCancel" data-i18n-title="ui.ttChangeCancel"></button>
+            </div>
+          </div>
+
+          <div class="row">
+            <span class="tile accent" data-icon="settings" data-size="16"></span>
+            <div class="txt">
+              <b data-i18n="ui.panelKey">Abrir ajustes</b>
+              <span class="sub" data-i18n="ui.panelHint">Aunque el icono de la bandeja esté oculto</span>
+            </div>
+            <div class="ctl">
+              <kbd id="panelKeyValue" role="button" tabindex="0">Ctrl + Alt + P</kbd>
+              <button class="btn btn-soft btn-sm btn-icon" type="button" id="btnChangePanel"
+                      data-icon="keyboard" data-size="14"
+                      data-i18n-aria="ui.ttChangePanel" data-i18n-title="ui.ttChangePanel"></button>
+            </div>
+          </div>
+
+          <div class="row">
+            <span class="tile accent" data-icon="users" data-size="16"></span>
+            <div class="txt">
+              <b data-i18n="ui.meetingKey">Grabar reunión</b>
+              <span class="sub" data-i18n="ui.meetingKeyHint">Inicia y para la grabación de la reunión</span>
+            </div>
+            <div class="ctl">
+              <kbd id="meetingKeyValue" role="button" tabindex="0">Ctrl + Alt + R</kbd>
+              <button class="btn btn-soft btn-sm btn-icon" type="button" id="btnChangeMeeting"
+                      data-icon="keyboard" data-size="14"
+                      data-i18n-aria="ui.ttChangeMeeting" data-i18n-title="ui.ttChangeMeeting"></button>
+            </div>
+          </div>
+
+          <div class="row">
+            <span class="tile accent" data-icon="stop" data-size="16"></span>
+            <div class="txt">
+              <b data-i18n="ui.meetCancelKey">Cancelar o detener la reunión</b>
+              <span class="sub" data-i18n="ui.meetCancelKeyHint">Detiene la reunión en curso sin guardarla</span>
+            </div>
+            <div class="ctl">
+              <kbd id="meetCancelKeyValue" role="button" tabindex="0">Ctrl + Alt + S</kbd>
+              <button class="btn btn-soft btn-sm btn-icon" type="button" id="btnChangeMeetCancel"
+                      data-icon="keyboard" data-size="14"
+                      data-i18n-aria="ui.ttChangeMeetCancel" data-i18n-title="ui.ttChangeMeetCancel"></button>
+            </div>
+          </div>
+
+          <!-- Capturador de atajos: las teclas se van ACUMULANDO de una en una
+               (no hay que pulsarlas todas a la vez). Cada tecla entra como una
+               ficha; «Borrar última»/Retroceso quita la última, «Empezar de cero»
+               vacía y «Guardar» aplica. El motivo de un fallo se explica aquí
+               mismo, con el mensaje del backend. -->
+          <div class="hk-capture" id="hkCapture" hidden>
+            <div class="hk-head">
+              <span class="hk-pulse" aria-hidden="true"></span>
+              <p data-i18n="ui.pressKeys">Pulsa una tecla, suelta y pulsa la siguiente: se van sumando</p>
+              <span class="hk-count" id="hkCount">0/3</span>
+            </div>
+            <div class="hk-chips" id="hkChips" role="list"
+                 data-i18n-aria="ui.hkCombo" aria-label="Combinación"></div>
+            <p class="hk-tip" data-i18n="ui.hkHint">Hasta 3 teclas. Retroceso borra la última; «Empezar de cero» las quita todas.</p>
+            <p class="hk-error hk-error-in" id="hkCaptureError" hidden></p>
+            <div class="hk-actions">
+              <button class="btn btn-soft btn-sm" type="button" id="hkBack"
+                      data-i18n="ui.hkBack">Borrar última</button>
+              <button class="btn btn-soft btn-sm" type="button" id="hkClear"
+                      data-i18n="ui.hkClear">Empezar de cero</button>
+              <button class="btn btn-soft btn-sm btn-icon" type="button" id="hkCancel"
+                      data-icon="x" data-size="14"
+                      data-i18n-aria="ui.cancel" data-i18n-title="ui.cancel"></button>
+              <button class="btn btn-primary btn-sm" type="button" id="hkSave"
+                      data-i18n="ui.hkSave">Guardar</button>
+            </div>
+          </div>
+          <p class="hk-error" id="hkError" hidden></p>
+        </div>
+      </section>
+
+      <!-- -------------------------- 7 · APARIENCIA -------------------------- -->
+      <section data-sec="apariencia" hidden>
+        <div class="pane-head">
+          <h2 data-i18n="ui.appearance">Apariencia</h2>
+          <p data-i18n="ui.appearanceHint">Se aplica a la vez al panel y a la isla</p>
+        </div>
+
+        <div class="group">
+          <div class="g-head">
+            <h3 data-i18n="ui.grpTheme">Tema</h3>
+            <span class="hint" data-i18n="ui.grpThemeHint">el mismo interruptor está en la cabecera</span>
+          </div>
+          <div class="row">
+            <span class="tile accent" data-icon="moon" data-size="16"></span>
+            <div class="txt">
+              <b data-i18n="ui.themeMode">Claro u oscuro</b>
+              <span class="sub" data-i18n="ui.themeModeHint">El panel cambia al instante; la isla toma el mismo tema</span>
+            </div>
+            <div class="ctl">
+              <div class="seg" id="themeSeg" role="group" data-i18n-aria="ui.grpTheme" aria-label="Tema">
+                <button type="button" data-theme-val="light" data-i18n="ui.themeLight">Claro</button>
+                <button type="button" data-theme-val="dark" data-i18n="ui.themeDark">Oscuro</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="group">
+          <div class="g-head">
+            <h3 data-i18n="ui.grpIsland">La isla</h3>
+            <span class="hint" data-i18n="ui.grpIslandHint">única ventana flotante de dicta</span>
+          </div>
+          <div class="row">
+            <span class="tile accent" data-icon="monitor" data-size="16"></span>
+            <div class="txt">
+              <b data-i18n="ui.islandPos">Posición</b>
+              <span class="sub" data-i18n="ui.islandPosHint">Arriba cuelga del borde; abajo es una pastilla flotante</span>
+            </div>
+            <div class="ctl">
+              <div class="seg" data-island-pos role="group" data-i18n-aria="ui.islandPos" aria-label="Posición">
+                <button type="button" data-island-pos-val="top" data-i18n="ui.posTop">Arriba</button>
+                <button type="button" data-island-pos-val="bottom" data-i18n="ui.posBottom">Abajo</button>
+              </div>
+            </div>
+          </div>
+          <div class="row">
+            <span class="tile accent" data-icon="sparkle" data-size="16"></span>
+            <div class="txt">
+              <b data-i18n="ui.islandPalette">Paleta</b>
+              <span class="sub" data-i18n="ui.islandPaletteHint">Color de la onda y del cuerpo de la isla</span>
+            </div>
+            <div class="ctl sel">
+              <div class="select-wrap">
+                <select data-island-palette data-i18n-aria="ui.islandPalette" aria-label="Paleta"></select>
+                <span class="chev" data-icon="chevron-down" data-size="14" data-sw="2.2"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ================================ pie ================================
+       Sin botón de probar micrófono: la prueba vive SOLO en su grupo
+       («Micrófono» → «Probar la entrada»), no duplicada aquí. -->
+  <footer class="app-foot">
+    <button class="btn btn-ghost btn-icon" type="button" id="btnQuit"
+            data-icon="power" data-size="16"
+            data-i18n-aria="ui.quit" data-i18n-title="ui.quit"></button>
+    <span class="ver" id="ver"></span>
+    <span class="foot-sp"></span>
+    <button class="btn btn-primary btn-icon" type="button" id="btnDone"
+            data-icon="check" data-size="16"
+            data-i18n-aria="ui.done" data-i18n-title="ui.done"></button>
+  </footer>
+
+</div>
+<!-- Reproductor compartido: la UI de cada fila es propia (onda + progreso) -->
+<audio id="previewAudio" preload="none" hidden></audio>
+<!-- El interruptor de tema de la cabecera se retiró (el tema se elige en
+     Apariencia, #themeSeg). El nodo se conserva vacío porque app.js lo
+     referencia por id; sin él se rompería el contrato de ids del panel. Vacío y
+     oculto, app.js lo ignora sin efectos (no hay .ts-opt ni .ts-thumb dentro).  -->
+<div id="themeSwitch" hidden></div>
+
+<!-- ============================= apagado =============================
+     Confirmación con el DISEÑO DE LA APP (nada de window.confirm): pregunta si
+     apagar Dicta y avisa de que se cerrará todo. «Cancelar» no envía nada;
+     «Apagar Dicta» lanza POST {action:"quit"}. Escape y clic fuera cancelan. -->
+<div class="dlg" id="quitDialog" role="dialog" aria-modal="true"
+     aria-labelledby="quitTitle" aria-describedby="quitBody" hidden>
+  <div class="dlg-box">
+    <span class="tile err dlg-ico" data-icon="power" data-size="18"></span>
+    <h2 class="dlg-title" id="quitTitle" data-i18n="ui.quitTitle">¿Apagar Dicta?</h2>
+    <p class="dlg-body" id="quitBody" data-i18n="ui.quitBody"></p>
+    <div class="dlg-acts">
+      <button type="button" class="btn btn-soft" id="quitCancel"
+              data-i18n-aria="ui.cancel" data-i18n-title="ui.cancel">
+        <span data-icon="x" data-size="16"></span>
+        <span data-i18n="ui.cancel">Cancelar</span>
+      </button>
+      <button type="button" class="btn btn-danger" id="quitConfirm"
+              data-i18n-aria="ui.quitConfirm" data-i18n-title="ui.quitConfirm">
+        <span data-icon="power" data-size="16"></span>
+        <span data-i18n="ui.quitConfirm">Apagar Dicta</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script src="/panel/app.js"></script>
+</body>
+</html>

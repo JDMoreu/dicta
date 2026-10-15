@@ -1,0 +1,1412 @@
+<!DOCTYPE html>
+<html lang="es" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>dicta · prediseño — panel de ajustes</title>
+<style>
+/* ============================================================================
+   dicta · prediseño — ventana de ajustes (maqueta navegable 1040×820)
+   HTML/CSS/JS puro. Sin frameworks, sin CDN, sin fuentes remotas: file://
+   Regla de sistema (DESIGN.md): superficie SÓLIDA, sin bordes; la forma se
+   delimita con LUZ (filo de luz en oscuro, anillo hairline en claro).
+   ========================================================================== */
+
+:root{
+  --bg:#F2F2F5; --surface:#FFFFFF; --surface-2:#F5F5F7; --surface-3:#EBEBEF;
+  --text:#1D1D1F; --text-2:#52525A; --text-3:#67676D;
+  --line:rgba(0,0,0,.10); --line-2:rgba(0,0,0,.06); --line-strong:rgba(0,0,0,.16);
+  --accent:#0066CC; --accent-hover:#0052A3; --accent-sf:#E8F1FE; --accent-tx:#FFFFFF;
+  --ok:#2E7D32; --ok-sf:#E7F3E9; --warn:#B25000; --warn-sf:#FBEFE1;
+  --err:#D70015; --err-sf:#FCE8EA;
+  --lift-1:0 0 0 1px rgba(0,0,0,.05), 0 1px 2px rgba(0,0,0,.04);
+  --lift-2:0 0 0 1px rgba(0,0,0,.045), 0 1px 2px rgba(0,0,0,.04), 0 8px 24px rgba(0,0,0,.06);
+  --edge:0 0 0 0 transparent;
+  --island-bg:#FFFFFF; --island-fg:#0E0F13;
+  --fn:"Segoe UI Variable Display","Segoe UI Variable Text","Segoe UI",system-ui,sans-serif;
+  --mono:"Cascadia Mono",ui-monospace,"Consolas",monospace;
+  --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px; --sp-8:32px;
+  --r-group:14px; --r-control:9px; --r-tile:9px; --r-chip:8px; --r-pill:999px;
+  --h-ctl:32px; --h-ctl-sm:26px; --h-ctl-lg:40px;
+  --ease-out:cubic-bezier(.2,.8,.2,1); --ease-in:cubic-bezier(.4,0,1,1);
+  --ease-spring:cubic-bezier(.34,1.32,.44,1);
+  --t-micro:120ms; --t-fast:180ms; --t-base:240ms; --t-slow:320ms;
+}
+html[data-theme="dark"]{
+  --bg:#141418; --surface:#1C1C1F; --surface-2:#26262A; --surface-3:#2F2F34;
+  --text:#F5F5F7; --text-2:#B6B6BF; --text-3:#94949E;
+  --line:rgba(255,255,255,.12); --line-2:rgba(255,255,255,.06); --line-strong:rgba(255,255,255,.20);
+  --accent:#5B9DFF; --accent-hover:#7FB2FF; --accent-sf:#16294A; --accent-tx:#0B1220;
+  --ok:#30D158; --ok-sf:#12291A; --warn:#FF9F0A; --warn-sf:#2C2113;
+  --err:#FF453A; --err-sf:#2E1517;
+  --lift-1:inset 0 1px 0 rgba(255,255,255,.05), 0 1px 2px rgba(0,0,0,.40);
+  --lift-2:inset 0 1px 0 rgba(255,255,255,.055), 0 1px 2px rgba(0,0,0,.40), 0 10px 30px rgba(0,0,0,.32);
+  --edge:inset 0 1px 0 rgba(255,255,255,.05);
+  --island-bg:#0E0F13; --island-fg:#F5F5F7;
+}
+
+*{box-sizing:border-box;margin:0;padding:0}
+[hidden]{display:none !important}
+body{
+  min-height:100vh; font-family:var(--fn); font-size:13px; color:var(--text); background:var(--bg);
+  -webkit-font-smoothing:antialiased; padding:var(--sp-5) var(--sp-6) 64px;
+  transition:background var(--t-base) var(--ease-out), color var(--t-base) var(--ease-out);
+}
+button{font:inherit;color:inherit}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:var(--line); border-radius:9px; border:3px solid transparent; background-clip:content-box}
+::-webkit-scrollbar-thumb:hover{background:var(--text-3); background-clip:content-box}
+
+/* ---------- barra del mockup (no es parte del producto) ---------- */
+.mockbar{display:flex; align-items:center; gap:var(--sp-3); max-width:1040px; margin:0 auto var(--sp-4); flex-wrap:wrap}
+.mockbar .tag{font-size:11px; color:var(--text-3)}
+.mockbar b{font-size:15px; font-weight:600}
+.mockbar .grow{flex:1 1 auto}
+.mock-note{max-width:1040px; margin:var(--sp-5) auto 0; font-size:12px; color:var(--text-2); line-height:1.7}
+.mock-note b{color:var(--text)}
+.mock-note ul{margin:var(--sp-2) 0 0 var(--sp-5)}
+.mock-note li{margin-bottom:2px}
+.mock-note code{font-family:var(--mono); font-size:11px; background:var(--surface-2); padding:1px 5px; border-radius:4px}
+
+/* ======================= LA VENTANA (1040 × 820) ======================= */
+.stage{position:relative}
+.app{
+  width:1040px; height:820px; margin:0 auto; transform-origin:top center;
+  display:grid; grid-template-rows:auto minmax(0,1fr) auto;
+  background:var(--bg); border-radius:12px; overflow:hidden;
+  box-shadow:var(--lift-2), 0 40px 90px rgba(0,0,0,.35);
+  transition:background var(--t-base) var(--ease-out);
+}
+
+/* ---------- cabecera ---------- */
+.app-head{
+  display:flex; align-items:center; gap:var(--sp-3); padding:var(--sp-4) var(--sp-5);
+  box-shadow:0 1px 0 var(--line-2); position:relative; z-index:3;
+}
+.brand{display:grid; place-items:center; width:34px; height:34px; border-radius:var(--r-tile);
+       background:var(--accent-sf); color:var(--accent); box-shadow:var(--edge); flex:0 0 auto}
+.head-txt{flex:1 1 auto; min-width:0}
+.head-txt h1{font-size:22px; font-weight:700; letter-spacing:-.02em; line-height:1.15}
+.head-txt p{font-size:12px; color:var(--text-2); margin-top:2px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis}
+.status{display:inline-flex; align-items:center; gap:var(--sp-2); padding:5px var(--sp-3);
+        border-radius:var(--r-pill); background:var(--surface); box-shadow:var(--lift-1); flex:0 0 auto}
+.status .dot{width:7px; height:7px; border-radius:50%; background:var(--ok)}
+.status .dot.busy{background:var(--accent); animation:pulse 1.1s ease-in-out infinite}
+.status .dot.err{background:var(--err)}
+@keyframes pulse{50%{opacity:.3}}
+.status span{font-size:12px; color:var(--text-2)}
+.theme-switch{position:relative; display:inline-flex; gap:2px; padding:3px; background:var(--surface-2);
+              border-radius:var(--r-pill); box-shadow:var(--lift-1); flex:0 0 auto}
+.theme-switch .ts-thumb{position:absolute; top:3px; left:3px; width:32px; height:24px; border-radius:var(--r-pill);
+                        background:var(--accent); box-shadow:0 1px 3px color-mix(in srgb,var(--accent) 45%,transparent);
+                        transition:transform var(--t-base) var(--ease-out)}
+.theme-switch[data-val=dark] .ts-thumb{transform:translateX(34px)}
+.ts-opt{position:relative; z-index:1; width:32px; height:24px; display:grid; place-items:center; padding:0;
+        border:0; background:transparent; color:var(--text-3); border-radius:var(--r-pill); cursor:pointer;
+        transition:color var(--t-fast) var(--ease-out)}
+.ts-opt[aria-checked=true]{color:var(--accent-tx)}
+
+/* ---------- cuerpo: raíl + panel ---------- */
+.app-body{display:grid; grid-template-columns:212px minmax(0,1fr); min-height:0}
+.rail{
+  display:flex; flex-direction:column; gap:2px; padding:var(--sp-4) var(--sp-3);
+  box-shadow:1px 0 0 var(--line-2); overflow-y:auto; scrollbar-width:thin;
+}
+.rail-item{
+  display:flex; align-items:center; gap:var(--sp-3); padding:9px var(--sp-3); border:0; border-radius:var(--r-control);
+  background:transparent; cursor:pointer; text-align:left; font-size:13px; color:var(--text-2);
+  transition:background var(--t-micro) var(--ease-out), color var(--t-micro) var(--ease-out);
+}
+.rail-item:hover{background:var(--surface-2); color:var(--text)}
+.rail-item[aria-current=true]{background:var(--accent-sf); color:var(--accent); font-weight:600}
+.rail-item .ri{flex:0 0 auto; display:grid; place-items:center; width:20px; height:20px}
+.rail-item .cnt{margin-left:auto; font-size:11px; color:var(--text-3);
+                font-variant-numeric:tabular-nums}
+.rail-item[aria-current=true] .cnt{color:var(--accent)}
+.rail-item:focus-visible,.ts-opt:focus-visible,.btn:focus-visible,select:focus-visible,
+input:focus-visible,textarea:focus-visible,.switch:focus-visible,kbd:focus-visible,
+.chip button:focus-visible,.slider:focus-visible,.rail-item:focus-visible{
+  outline:2px solid var(--accent); outline-offset:2px
+}
+.rail-foot{margin-top:auto; padding:var(--sp-3) var(--sp-3) var(--sp-1); font-size:11px; color:var(--text-3);
+           line-height:1.6; border-top:1px solid var(--line-2)}
+.rail-foot b{display:block; color:var(--text-2); font-weight:600}
+
+.pane{min-height:0; overflow-y:auto; overscroll-behavior:contain; padding:var(--sp-5) var(--sp-6) var(--sp-6)}
+.pane-head{display:flex; align-items:baseline; gap:var(--sp-3); margin-bottom:var(--sp-4)}
+.pane-head h2{font-size:16px; font-weight:600}
+.pane-head p{font-size:12px; color:var(--text-3)}
+.pane-head .hint{margin-left:auto; font-size:12px; color:var(--text-3)}
+.pane > section{animation:secIn var(--t-base) var(--ease-out)}
+@keyframes secIn{from{opacity:0; transform:translateY(6px)}}
+
+/* ---------- grupos y filas ---------- */
+.group{background:var(--surface); border-radius:var(--r-group); box-shadow:var(--lift-2); margin-bottom:var(--sp-4); overflow:hidden}
+.g-head{display:flex; align-items:center; gap:var(--sp-2); padding:var(--sp-3) var(--sp-4) var(--sp-2)}
+.g-head h3{font-size:14px; font-weight:600}
+.g-head .hint{margin-left:auto; font-size:12px; color:var(--text-3); text-align:right}
+.g-head + .row{border-top:1px solid var(--line-2)}
+.row{display:flex; align-items:center; gap:var(--sp-3); padding:var(--sp-3) var(--sp-4); min-height:52px}
+.row + .row{border-top:1px solid var(--line-2)}
+.row.stack{align-items:stretch; flex-direction:column; gap:var(--sp-3)}
+.row .txt{flex:1 1 auto; min-width:0}
+.row .txt b{display:block; font-size:14px; font-weight:600}
+.row .txt .sub{display:block; font-size:12px; color:var(--text-3); margin-top:2px; line-height:1.45}
+.row .ctl{flex:0 0 auto; display:flex; align-items:center; gap:var(--sp-2)}
+.tile{flex:0 0 auto; display:grid; place-items:center; width:30px; height:30px; border-radius:var(--r-tile);
+      background:var(--surface-2); color:var(--text-2); box-shadow:var(--edge)}
+.tile.accent{background:var(--accent-sf); color:var(--accent)}
+.tile.ok{background:var(--ok-sf); color:var(--ok)}
+.tile.warn{background:var(--warn-sf); color:var(--warn)}
+.tile.err{background:var(--err-sf); color:var(--err)}
+.val{font-family:var(--mono); font-size:13px; font-weight:600; color:var(--accent);
+     font-variant-numeric:tabular-nums; min-width:3.2ch; text-align:right}
+.sr-note{font-size:11px; color:var(--text-3)}
+
+/* ---------- controles ---------- */
+.select-wrap{position:relative; width:100%}
+.select-wrap .chev{position:absolute; right:var(--sp-3); top:50%; transform:translateY(-50%); color:var(--text-3); pointer-events:none}
+select,input[type=text],textarea{
+  width:100%; font:inherit; font-size:13px; color:var(--text); background:var(--surface-2);
+  border:0; border-radius:var(--r-control); padding:var(--sp-2) var(--sp-3); min-height:var(--h-ctl);
+  transition:background var(--t-micro) var(--ease-out)}
+select{appearance:none; padding-right:var(--sp-8); cursor:pointer}
+select:hover,input[type=text]:hover{background:var(--surface-3)}
+input::placeholder{color:var(--text-3)}
+textarea{font-family:var(--mono); font-size:13px; line-height:1.6; min-height:150px; resize:vertical; tab-size:2}
+.btn{font:inherit; font-size:13px; font-weight:500; display:inline-flex; align-items:center; justify-content:center;
+     gap:var(--sp-2); min-height:var(--h-ctl); padding:var(--sp-2) var(--sp-4); border:0; border-radius:var(--r-control);
+     background:var(--surface-2); color:var(--text); cursor:pointer; box-shadow:var(--edge); white-space:nowrap;
+     transition:background var(--t-micro) var(--ease-out), transform 90ms var(--ease-out)}
+.btn svg{flex:0 0 auto}
+.btn:hover{background:var(--surface-3)}
+.btn:active{transform:scale(.975)}
+.btn-primary{background:var(--accent); color:var(--accent-tx)}
+.btn-primary:hover{background:var(--accent-hover)}
+.btn-soft{background:var(--surface); box-shadow:var(--lift-1)}
+.btn-soft:hover{background:var(--surface-2)}
+.btn-ghost{background:transparent; color:var(--accent)}
+.btn-ghost:hover{background:var(--accent-sf)}
+.btn-danger{background:transparent; color:var(--err)}
+.btn-danger:hover{background:var(--err-sf)}
+.btn-danger.confirm{background:var(--err); color:#fff}
+html[data-theme="dark"] .btn-danger.confirm{background:#D70015}
+.btn-sm{min-height:var(--h-ctl-sm); padding:2px var(--sp-3); font-size:12px}
+.btn-lg{min-height:var(--h-ctl-lg); padding:var(--sp-2) var(--sp-6)}
+.btn:disabled{opacity:.5; pointer-events:none}
+.switch{position:relative; flex:0 0 auto; width:44px; height:24px; padding:0; border:0; border-radius:var(--r-pill);
+        background:var(--line-strong); cursor:pointer; transition:background var(--t-fast) var(--ease-out)}
+.switch[aria-checked=true]{background:var(--accent)}
+.sw-thumb{position:absolute; top:2px; left:2px; width:20px; height:20px; border-radius:50%; background:#fff;
+          box-shadow:0 1px 3px rgba(0,0,0,.28); transition:transform var(--t-fast) var(--ease-spring)}
+.switch[aria-checked=true] .sw-thumb{transform:translateX(20px)}
+.seg{display:inline-flex; gap:2px; padding:3px; background:var(--surface-2); border-radius:var(--r-pill); box-shadow:var(--lift-1)}
+.seg button{border:0; background:transparent; color:var(--text-3); font-size:12px; font-weight:500;
+            padding:5px var(--sp-3); border-radius:var(--r-pill); cursor:pointer;
+            transition:background var(--t-fast) var(--ease-out), color var(--t-fast) var(--ease-out)}
+.seg button[aria-pressed=true]{background:var(--accent); color:var(--accent-tx)}
+.seg button:not([aria-pressed=true]):hover{color:var(--text)}
+.slider{position:relative; width:100%; height:22px; cursor:pointer; touch-action:none}
+.slider .track{position:absolute; top:50%; left:0; right:0; height:4px; margin-top:-2px; background:var(--line-strong); border-radius:4px}
+.slider .fill{height:100%; width:0; background:var(--accent); border-radius:4px}
+.slider .thumb{position:absolute; top:50%; width:16px; height:16px; margin:-8px 0 0 -8px; background:#fff;
+               border-radius:50%; box-shadow:0 1px 3px rgba(0,0,0,.3), 0 3px 8px rgba(0,0,0,.16);
+               transition:transform var(--t-micro) var(--ease-out)}
+.slider:hover .thumb{transform:scale(1.12)}
+.slider:active .thumb{transform:scale(.96)}
+.scale-row{display:flex; justify-content:space-between; font-size:11px; color:var(--text-3)}
+.chips{display:flex; flex-wrap:wrap; gap:var(--sp-2)}
+.chip{display:inline-flex; align-items:center; gap:var(--sp-2); padding:4px 4px 4px var(--sp-3); background:var(--accent-sf);
+      color:var(--accent); border-radius:var(--r-pill); font-size:12px; font-weight:500;
+      animation:pop var(--t-fast) var(--ease-spring)}
+@keyframes pop{from{opacity:0; transform:scale(.82)}}
+.chip button{position:relative; width:16px; height:16px; display:grid; place-items:center; padding:0; border:0;
+             border-radius:50%; background:color-mix(in srgb,var(--accent) 16%,transparent); color:var(--accent);
+             cursor:pointer; font-size:13px; line-height:1}
+.chip button::after{content:""; position:absolute; inset:-8px}
+.chip button:hover{background:var(--accent); color:var(--accent-tx)}
+kbd{font-family:var(--mono); font-size:12px; color:var(--text); background:var(--surface-2); border-radius:var(--r-chip);
+    padding:6px var(--sp-3); box-shadow:inset 0 -2px 0 var(--line), var(--edge); cursor:pointer; display:inline-flex; align-items:center}
+kbd:hover{background:var(--surface-3)}
+kbd.capturing{box-shadow:0 0 0 2px var(--accent), inset 0 -2px 0 var(--line)}
+.hk-capture{display:flex; align-items:center; gap:var(--sp-3); padding:var(--sp-3) var(--sp-4); border-radius:var(--r-control);
+            background:var(--accent-sf); box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 30%,transparent);
+            animation:hkIn var(--t-fast) var(--ease-out)}
+@keyframes hkIn{from{opacity:0; transform:translateY(-4px)}}
+.hk-capture p{flex:1 1 auto; font-size:13px; font-weight:500}
+.hk-pulse{width:9px; height:9px; border-radius:50%; background:var(--accent); animation:pulse 1.1s ease-in-out infinite}
+.hk-error{font-size:12px; color:var(--err); margin-top:var(--sp-2)}
+.pill{display:inline-flex; align-items:center; gap:var(--sp-2); padding:4px var(--sp-3); border-radius:var(--r-pill);
+      background:var(--surface-2); font-size:12px; color:var(--text-2)}
+.pill.rec{background:var(--err); color:#fff; font-weight:600; letter-spacing:.08em; font-size:11px; text-transform:uppercase}
+html[data-theme="dark"] .pill.rec{background:#D70015}
+.pill.rec .rdot{width:7px; height:7px; border-radius:50%; background:#fff; animation:pulse 1.1s ease-in-out infinite}
+.pill.paused{background:var(--warn)}
+
+/* ---------- audios ---------- */
+.li{display:flex; align-items:center; gap:var(--sp-3); padding:var(--sp-3) 0}
+.li + .li{border-top:1px solid var(--line-2)}
+.li .nm{flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.li .meta{flex:0 0 auto; font-family:var(--mono); font-size:11px; color:var(--text-3); font-variant-numeric:tabular-nums}
+.li .meta.ok{color:var(--ok)} .li .meta.err{color:var(--err)}
+.progress{width:120px; height:4px; flex:0 0 auto; border-radius:2px; background:var(--line-strong); overflow:hidden}
+.progress > i{display:block; height:100%; width:0; background:var(--accent); transition:width var(--t-base) var(--ease-out)}
+.progress.sm{width:72px}
+.drop{border-radius:var(--r-control); background:var(--surface-2); padding:var(--sp-4); text-align:center;
+      box-shadow:inset 0 0 0 1px var(--line-2)}
+.drop b{display:block; font-size:13px; font-weight:600}
+.drop span{font-size:12px; color:var(--text-3)}
+.pv{display:flex; align-items:center; gap:var(--sp-2); width:100%}
+.pv-play{flex:0 0 auto; width:32px; height:32px; display:grid; place-items:center; padding:0; border:0; border-radius:50%;
+         background:var(--surface); color:var(--accent); cursor:pointer; box-shadow:var(--lift-1)}
+.pv-play[data-state=playing]{background:var(--accent); color:var(--accent-tx); box-shadow:none}
+.pv-track{position:relative; flex:1 1 auto; height:32px; border-radius:var(--r-chip); background:var(--surface-2); overflow:hidden; cursor:pointer}
+.pv-time{flex:0 0 auto; font-family:var(--mono); font-size:11px; color:var(--text-3); font-variant-numeric:tabular-nums}
+.levels{display:flex; gap:var(--sp-2); height:32px; align-items:flex-end; width:100%}
+.levels .lv{flex:1 1 0; height:100%; display:flex; align-items:flex-end; background:var(--surface-2);
+            border-radius:var(--r-control); overflow:hidden}
+.levels .lv i{display:block; width:100%; height:100%; transform:scaleY(.2); transform-origin:bottom;
+              background:var(--accent); transition:transform 120ms linear}
+.levels .lv.mic i{background:var(--warn)}
+.levels-cap{display:flex; font-size:11px; color:var(--text-3)}
+.levels-cap span{flex:1 1 0}
+
+/* ---------- reunión ---------- */
+.meet-hero{display:flex; flex-direction:column; align-items:center; justify-content:center; gap:var(--sp-3);
+           text-align:center; padding:var(--sp-6) var(--sp-4); background:radial-gradient(120% 90% at 50% 0%,
+           color-mix(in srgb,var(--accent) 12%,transparent), transparent 62%)}
+.meet-mark{display:grid; place-items:center; width:56px; height:56px; border-radius:16px; background:var(--accent-sf);
+           color:var(--accent); box-shadow:0 0 0 1px color-mix(in srgb,var(--accent) 22%,transparent)}
+.meet-hero b{font-size:14px; font-weight:600}
+.meet-hero p{font-size:12px; color:var(--text-2); max-width:38ch; line-height:1.5}
+.meet-live-head{display:flex; align-items:center; gap:var(--sp-3); flex-wrap:wrap}
+.timer{font-family:var(--mono); font-size:22px; font-weight:600; font-variant-numeric:tabular-nums}
+.transcript{padding:var(--sp-3) var(--sp-4); background:var(--surface-2); border-radius:var(--r-control);
+            font-size:13px; line-height:1.6; color:var(--text-2); max-height:120px; overflow:auto; min-height:60px}
+.transcript .who{color:var(--accent); font-weight:600}
+.transcript .who.mic{color:var(--warn)}
+
+/* ---------- callout de prueba de micro ---------- */
+.probe{display:flex; align-items:center; gap:var(--sp-3); padding:var(--sp-3) var(--sp-4); background:var(--surface);
+       border-radius:var(--r-control); box-shadow:var(--lift-2); margin-bottom:var(--sp-4);
+       animation:hkIn var(--t-fast) var(--ease-out)}
+.probe .bar{flex:1 1 auto; height:6px; border-radius:3px; background:var(--line-strong); overflow:hidden}
+.probe .bar i{display:block; height:100%; width:0; background:var(--ok); transition:width 80ms linear}
+
+/* ---------- pie ---------- */
+.app-foot{display:flex; align-items:center; gap:var(--sp-2); padding:var(--sp-3) var(--sp-5);
+          box-shadow:0 -1px 0 var(--line-2); background:color-mix(in srgb,var(--bg) 92%,transparent)}
+.foot-sp{flex:1 1 auto}
+.ver{font-size:11px; color:var(--text-3); font-variant-numeric:tabular-nums}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms !important; animation-iteration-count:1 !important;
+                       transition-duration:.01ms !important}
+}
+</style>
+</head>
+<body>
+
+<!-- ============================ barra del mockup ============================ -->
+<div class="mockbar">
+  <b>dicta · prediseño</b>
+  <span class="tag">ventana de ajustes 1040 × 820</span>
+  <div class="grow"></div>
+  <div class="seg" id="langSeg" role="group" aria-label="Idioma del mockup">
+    <button data-lang="es" aria-pressed="true">ES</button>
+    <button data-lang="en" aria-pressed="false">EN</button>
+  </div>
+  <div class="theme-switch" id="themeSwitch" data-val="dark" role="radiogroup" aria-label="Tema">
+    <span class="ts-thumb" aria-hidden="true"></span>
+    <button class="ts-opt" data-val="light" role="radio" aria-checked="false" title="Claro" data-icon="sun" data-size="15" data-sw="2"></button>
+    <button class="ts-opt" data-val="dark" role="radio" aria-checked="true" title="Oscuro" data-icon="moon" data-size="15" data-sw="2"></button>
+  </div>
+</div>
+
+<div class="stage" id="stage">
+<div class="app" id="app">
+
+  <!-- ============================== cabecera ============================== -->
+  <header class="app-head">
+    <span class="brand" data-icon="wave" data-size="19"></span>
+    <div class="head-txt">
+      <h1 data-i18n="ui.title">Ajustes</h1>
+      <p data-i18n="ui.subtitle">Dictado por voz, 100 % local y privado</p>
+    </div>
+    <div class="status" id="status">
+      <span class="dot" id="statusDot"></span>
+      <span id="statusText" data-i18n="ui.statusReady">Listo para dictar</span>
+    </div>
+    <div class="theme-switch" id="themeSwitch2" data-val="dark" role="radiogroup" aria-label="Tema">
+      <span class="ts-thumb" aria-hidden="true"></span>
+      <button class="ts-opt" data-val="light" role="radio" aria-checked="false" aria-label="Claro" data-icon="sun" data-size="15" data-sw="2"></button>
+      <button class="ts-opt" data-val="dark" role="radio" aria-checked="true" aria-label="Oscuro" data-icon="moon" data-size="15" data-sw="2"></button>
+    </div>
+  </header>
+
+  <div class="app-body">
+
+    <!-- =============================== raíl =============================== -->
+    <nav class="rail" aria-label="Secciones de ajustes">
+      <button class="rail-item" data-sec="dictado" aria-current="true">
+        <span class="ri" data-icon="mic" data-size="17"></span><span data-i18n="ui.secDictation">Dictado</span></button>
+      <button class="rail-item" data-sec="diccionario">
+        <span class="ri" data-icon="book" data-size="17"></span><span data-i18n="ui.dict">Diccionario</span>
+        <span class="cnt" id="dictCount">5</span></button>
+      <button class="rail-item" data-sec="reunion">
+        <span class="ri" data-icon="users" data-size="17"></span><span data-i18n="ui.meeting">Reunión</span></button>
+      <button class="rail-item" data-sec="audios">
+        <span class="ri" data-icon="file-audio" data-size="17"></span><span data-i18n="ui.audios">Audios</span>
+        <span class="cnt" id="queueCount">3</span></button>
+      <button class="rail-item" data-sec="documentos">
+        <span class="ri" data-icon="file-text" data-size="17"></span><span data-i18n="ui.docs">Documentos</span>
+        <span class="cnt" id="docsCount">3</span></button>
+      <button class="rail-item" data-sec="atajos">
+        <span class="ri" data-icon="keyboard" data-size="17"></span><span data-i18n="ui.shortcuts">Atajos</span></button>
+      <button class="rail-item" data-sec="apariencia">
+        <span class="ri" data-icon="sun" data-size="17"></span><span data-i18n="ui.appearance">Apariencia</span></button>
+      <div class="rail-foot">
+        <b data-i18n="ui.engineState">Motor</b>
+        <span id="engineState">GPU Vulkan · AMD RX 9070</span><br>
+        <b data-i18n="ui.uptime">En marcha desde</b>
+        <span id="uptime">11:02</span>
+      </div>
+    </nav>
+
+    <!-- ============================== panel =============================== -->
+    <main class="pane" id="pane">
+
+      <!-- ---------- DICTADO ---------- -->
+      <section data-sec="dictado">
+        <div class="probe" id="probe" hidden>
+          <span class="tile ok" data-icon="mic" data-size="16"></span>
+          <div class="txt" style="flex:1 1 auto"><b data-i18n="ui.testTitle">Probando el micrófono…</b>
+            <span class="sub" id="probeMsg" data-i18n="ui.testHint">Habla en voz normal. La barra se mueve con tu voz.</span></div>
+          <div class="bar"><i id="probeBar"></i></div>
+          <button class="btn btn-soft btn-sm" id="probeStop" data-i18n="ui.cancel">Cancelar</button>
+        </div>
+
+        <div class="pane-head">
+          <h2 data-i18n="ui.secDictation">Dictado</h2>
+          <p data-i18n="ui.secDictationHint">Lo que se usa cuando pulsas el atajo</p>
+        </div>
+
+        <div class="group">
+          <div class="g-head"><h3 data-i18n="ui.grpRecognition">Reconocimiento</h3>
+            <span class="hint" data-i18n="ui.grpRecognitionHint">se aplica al siguiente dictado, sin reiniciar</span></div>
+
+          <div class="row">
+            <span class="tile accent" data-icon="globe" data-size="16"></span>
+            <div class="txt"><b data-i18n="ui.language">Idioma</b>
+              <span class="sub" data-i18n="ui.languageHint">Reconocimiento e interfaz a la vez</span></div>
+            <div class="ctl" style="width:216px">
+              <div class="select-wrap">
+                <select id="selLang" data-i18n-aria="ui.language" aria-label="Idioma">
+                  <option value="es">Español</option><option value="en">English</option>
+                  <option value="pt">Português</option><option value="fr">Français</option>
+                  <option value="de">Deutsch</option><option value="it">Italiano</option>
+                </select>
+                <span class="chev" data-icon="chevron-down" data-size="14" data-sw="2.2"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="row">
+            <span class="tile accent" data-icon="chip" data-size="16"></span>
+            <div class="txt"><b data-i18n="ui.engine">Motor</b>
+              <span class="sub" id="engineHint">GPU detectada: AMD Radeon RX 9070 · Vulkan</span></div>
+            <div class="ctl" style="width:216px">
+              <div class="select-wrap">
+                <select aria-label="Motor">
+                  <option data-i18n="ui.engineAuto">Automático</option>
+                  <option>GPU Vulkan</option><option>GPU CUDA</option><option>CPU</option>
+                </select>
+                <span class="chev" data-icon="chevron-down" data-size="14" data-sw="2.2"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="row">
+            <span class="tile accent" data-icon="layers" data-size="16"></span>
+            <div class="txt"><b data-i18n="ui.model">Modelo</b>
+              <span class="sub" id="modelHint" data-i18n="ui.modelHintSpeed">Precisión frente a velocidad</span></div>
+            <div class="ctl" style="width:216px">
+              <div class="select-wrap">
+                <select aria-label="Modelo">
+                  <option>turbo</option><option>small</option><option>medium</option>
+                  <option>base</option><option>tiny</option>
+                </select>
+                <span class="chev" data-icon="chevron-down" data-size="14" data-sw="2.2"></span>
+              </div>
+            </div>
+          </div>
+
+          <div class="row">
+            <span class="tile accent" data-icon="mic" data-size="16"></span>
+            <div class="txt"><b data-i18n="ui.mic">Micrófono</b>
+              <span class="sub" id="micHint">2 canales · 48 kHz · WASAPI</span></div>
+            <div class="ctl" style="width:216px">
+              <div class="select-wrap">
+                <select aria-label="Micrófono">
+                  <option>Micrófono (Realtek Audio)</option><option>Micrófono USB</option>
+                </select>
+                <span class="chev" data-icon="chevron-down" data-size="14" data-sw="2.2"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="group">
+          <div class="g-head"><h3 data-i18n="ui.sens">Sensibilidad</h3>
+            <span class="hint" data-i18n="ui.sensHint">ganancia aplicada antes de transcribir</span></div>
+          <div class="row stack">
+            <div style="display:flex; align-items:center; gap:var(--sp-3); width:100%">
+              <span class="tile accent" data-icon="gauge" data-size="16"></span>
+              <div class="txt" style="flex:1 1 auto"><b data-i18n="ui.sensPeak">Umbral de voz</b>
+                <span class="sub" data-i18n="ui.sensPeakHint">Sube si se cuela ruido de fondo; baja si te come palabras</span></div>
+              <span class="val" id="sensVal">1.20</span>
+            </div>
+            <div>
+              <div class="slider" id="sensSlider" data-slider="0.4" tabindex="0" role="slider"
+                   aria-valuemin="0" aria-valuemax="100" aria-valuenow="40" aria-label="Sensibilidad">
+                <div class="track"><div class="fill"></div></div><div class="thumb"></div>
+              </div>
+              <div class="scale-row"><span data-i18n="ui.sensLow">Solo voces claras</span>
+                <span data-i18n="ui.sensHigh">Capta susurros</span></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="group">
+          <div class="g-head"><h3 data-i18n="ui.grpAfter">Al terminar el dictado</h3></div>
+          <div class="row">
+            <span class="tile" data-icon="clipboard" data-size="16"></span>
+            <div class="txt"><b data-i18n="ui.keepClip">Guardar también en el portapapeles</b>
+              <span class="sub" data-i18n="ui.keepClipHint">Se conserva aunque el pegado automático sea rechazado</span></div>
+            <div class="ctl"><button class="switch" role="switch" aria-checked="true"><span class="sw-thumb"></span></button></div>
+          </div>
+          <div class="row">
+            <span class="tile" data-icon="moon" data-size="16"></span>
+            <div class="txt"><b data-i18n="ui.autoHide">Ocultar la isla al pegar</b>
+              <span class="sub" data-i18n="ui.autoHideHint">Desaparece al instante, sin quedarse encendida</span></div>
+            <div class="ctl"><button class="switch" role="switch" aria-checked="true"><span class="sw-thumb"></span></button></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- DICCIONARIO ---------- -->
+      <section data-sec="diccionario" hidden>
+        <div class="pane-head">
+          <h2 data-i18n="ui.dict">Diccionario</h2>
+          <p data-i18n="ui.dictPaneHint">Va como prompt en cada petición: mejora nombres propios y jerga</p>
+        </div>
+        <div class="group">
+          <div class="g-head"><h3 data-i18n="ui.dictTerms">Términos</h3>
+            <span class="hint" id="dictHint">5 términos · se envían a whisper cada vez</span></div>
+          <div class="row stack">
+            <div style="display:flex; gap:var(--sp-2); width:100%">
+              <input type="text" id="dictInput" data-i18n-ph="ui.dictPlaceholder"
+                     placeholder="Escribe una palabra y pulsa Intro" spellcheck="false" autocomplete="off">
+              <button class="btn btn-soft" id="dictAdd"><span data-icon="plus" data-size="15"></span>
+                <span data-i18n="ui.dictAdd">Añadir</span></button>
+            </div>
+            <div class="chips" id="chips"></div>
+            <p class="sr-note" id="dictEmpty" data-i18n="ui.dictEmpty" hidden>
+              Aún no hay palabras. Añade términos que dictas a menudo.</p>
+          </div>
+        </div>
+        <div class="group">
+          <div class="g-head"><h3 data-i18n="ui.dictHow">Cómo se usa</h3></div>
+          <div class="row">
+            <span class="tile accent" data-icon="sparkle" data-size="16"></span>
+            <div class="txt"><b data-i18n="ui.dictPrompt">Prompt de reconocimiento</b>
+              <span class="sub" data-i18n="ui.dictPromptHint">Se manda junto al audio; no reinicia el servidor</span></div>
+          </div>
+          <div class="row">
+            <span class="tile" data-icon="folder" data-size="16"></span>
+            <div class="txt"><b data-i18n="ui.dictStored">Se guarda en dicta_config.json</b>
+              <span class="sub" data-i18n="ui.dictStoredHint">Junto a la aplicación, legible y editable a mano</span></div>
+            <div class="ctl"><button class="btn btn-soft btn-sm" data-i18n="ui.dictOpen">Abrir carpeta</button></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- REUNIÓN ---------- -->
+      <section data-sec="reunion" hidden>
+        <div class="pane-head">
+          <h2 data-i18n="ui.meeting">Reunión</h2>
+          <p data-i18n="ui.meetingHint">Sistema + micrófono, grabado en .wav</p>
+        </div>
+
+        <div class="group">
+          <div class="g-head"><h3 data-i18n="ui.meetSource">Fuente de audio</h3>
+            <span class="hint" data-i18n="ui.meetSourceHint">De dónde se captura el audio</span></div>
+          <div class="row">
+            <span class="tile ok" data-icon="speaker" data-size="16"></span>
+            <div class="txt" style="flex:1 1 auto">
+              <div class="select-wrap">
+                <select id="selSource" data-i18n-aria="ui.meetSource" aria-label="Fuente de audio">
+                  <option data-i18n="ui.srcAll">Todo el sistema (altavoz por defecto)</option>
+                  <option>Microsoft Teams</option><option>Google Chrome</option>
+                </select>
+                <span class="chev" data-icon="chevron-down" data-size="14" data-sw="2.2"></span>
+              </div>
+            </div>
+            <div class="ctl"><span class="pill"><span data-icon="speaker" data-size="12"></span>L
+              </span><span class="pill"><span data-icon="mic" data-size="12"></span>R</span></div>
+          </div>
+        </div>
+
+        <div class="group">
+          <!-- hero: inicio -->
+          <div class="meet-hero" id="meetIdle">
+            <span class="meet-mark" data-icon="mic" data-size="26" data-sw="1.8"></span>
+            <b data-i18n="ui.meetTitle">Inicia la grabación de la reunión</b>
+            <p data-i18n="ui.meetDesc">Captura el audio del sistema y del micrófono, guarda la grabación en .wav
+              y transcribe en vivo.</p>
+            <button class="btn btn-primary btn-lg" id="btnMeetStart">
+              <span data-icon="play" data-size="15" data-sw="2.2"></span>
+              <span data-i18n="ui.startMeeting">Iniciar</span></button>
+            <span class="sr-note" id="meetStatus"></span>
+          </div>
+
+          <!-- en curso -->
+          <div class="row stack" id="meetLive" hidden>
+            <div class="meet-live-head">
+              <span class="pill rec" id="recPill"><span class="rdot"></span><span data-i18n="ui.rec">REC</span></span>
+              <span class="timer" id="meetTimer">00:00:00</span>
+              <span style="flex:1 1 auto"></span>
+              <button class="btn btn-soft" id="btnMeetPause" data-i18n="ui.pause">Pausar</button>
+              <button class="btn btn-primary" id="btnMeetStop">
+                <span data-icon="stop" data-size="13"></span>
+                <span data-i18n="ui.meetSave">Guardar y terminar</span></button>
+              <button class="btn btn-danger" id="btnMeetCancel" data-i18n="ui.meetCancel">Cancelar</button>
+            </div>
+            <div>
+              <div class="levels">
+                <span class="lv"><i id="lvSys"></i></span>
+                <span class="lv mic"><i id="lvMic"></i></span>
+              </div>
+              <div class="levels-cap"><span data-i18n="ui.sys">Sistema</span><span data-i18n="ui.mic">Micrófono</span></div>
+            </div>
+            <p class="transcript" id="meetTranscript"></p>
+          </div>
+
+          <!-- resumen -->
+          <div class="row stack" id="meetDone" hidden style="text-align:center; align-items:center">
+            <span class="tile ok" style="width:44px;height:44px;border-radius:14px" data-icon="check" data-size="24" data-sw="1.8"></span>
+            <b style="font-size:14px; color:var(--ok)" id="meetDoneText"></b>
+            <div class="pv" style="max-width:420px">
+              <button class="pv-play" data-state="idle"><span data-icon="play" data-size="14"></span></button>
+              <div class="pv-track" id="meetWave"></div>
+              <span class="pv-time">42:18</span>
+            </div>
+            <div style="display:flex; gap:var(--sp-2)">
+              <button class="btn btn-soft" data-i18n="ui.meetOpen">Abrir documento</button>
+              <button class="btn btn-soft" data-i18n="ui.meetDl">Descargar grabación</button>
+              <button class="btn btn-ghost" id="btnMeetDismiss" data-i18n="ui.docClose">Cerrar</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- AUDIOS ---------- -->
+      <section data-sec="audios" hidden>
+        <div class="pane-head">
+          <h2 data-i18n="ui.audios">Audios</h2>
+          <p data-i18n="ui.audiosHint">Sube uno o varios; se transcriben en cola</p>
+        </div>
+        <div class="group">
+          <div class="g-head"><h3 data-i18n="ui.queue">Cola</h3>
+            <span class="hint" id="queueHint">2 de 3 terminados</span></div>
+          <div class="row">
+            <div class="drop" style="flex:1 1 auto">
+              <b data-i18n="ui.dropTitle">Arrastra archivos aquí</b>
+              <span data-i18n="ui.dropHint">wav, flac, ogg — mp3/m4a si hay ffmpeg</span>
+              <div style="display:flex; gap:var(--sp-2); justify-content:center; margin-top:var(--sp-3)">
+                <input type="file" id="filePick" multiple hidden>
+                <button class="btn btn-soft" id="btnPick" data-i18n="ui.pickFiles">Elegir archivos…</button>
+              </div>
+            </div>
+          </div>
+          <div class="row" style="display:block">
+            <div class="li">
+              <span class="tile ok" data-icon="file-audio" data-size="16"></span>
+              <div class="nm"><b>charla-tecnica.flac</b>
+                <span class="sub" style="display:block; font-size:11px; color:var(--text-3)">2:14 · español · 3 temas</span></div>
+              <div class="progress"><i style="width:100%"></i></div>
+              <span class="meta ok">Listo</span>
+              <div style="display:flex; gap:var(--sp-1)">
+                <button class="btn btn-soft btn-sm" title="Abrir transcripción" data-icon="file-text" data-size="13"></button>
+                <button class="btn btn-soft btn-sm" title="Descargar audio" data-icon="download" data-size="13"></button>
+              </div>
+            </div>
+            <div class="li">
+              <span class="tile accent" data-icon="file-audio" data-size="16"></span>
+              <div class="nm"><b>entrevista.ogg</b>
+                <span class="sub" style="display:block; font-size:11px; color:var(--text-3)">en curso · GPU Vulkan</span></div>
+              <div class="progress"><i id="qProg" style="width:6%"></i></div>
+              <span class="meta" id="qEta">00:14</span>
+              <div style="display:flex; gap:var(--sp-1)">
+                <button class="btn btn-danger btn-sm" title="Quitar de la cola" data-icon="x" data-size="13"></button>
+              </div>
+            </div>
+            <div class="li">
+              <span class="tile err" data-icon="file-audio" data-size="16"></span>
+              <div class="nm"><b>notas-whatsapp.m4a</b>
+                <span class="sub" style="display:block; font-size:11px; color:var(--err)">No se pudo decodificar — falta ffmpeg</span></div>
+              <div class="progress"><i style="width:0"></i></div>
+              <span class="meta err">Error</span>
+              <div style="display:flex; gap:var(--sp-1)">
+                <button class="btn btn-soft btn-sm" title="Reintentar" data-icon="refresh" data-size="13"></button>
+                <button class="btn btn-danger btn-sm" title="Quitar" data-icon="x" data-size="13"></button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="group">
+          <div class="g-head"><h3 data-i18n="ui.preview">Vista previa antes de transcribir</h3>
+            <span class="hint" data-i18n="ui.previewHint">picos reales, clic para saltar</span></div>
+          <div class="row">
+            <div class="pv">
+              <button class="pv-play" data-state="playing"><span data-icon="pause" data-size="14"></span></button>
+              <div class="pv-track" id="pvWave"></div>
+              <span class="pv-time" id="pvTime">00:32 / 02:14</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- DOCUMENTOS ---------- -->
+      <section data-sec="documentos" hidden>
+        <div class="pane-head">
+          <h2 data-i18n="ui.docs">Documentos</h2>
+          <p data-i18n="ui.docsHint">Todo lo transcrito queda en textos\</p>
+        </div>
+        <div class="group">
+          <div class="g-head"><h3 data-i18n="ui.docsList">Generados</h3>
+            <span class="hint" id="docsHint">3 documentos · 1 con grabación</span></div>
+          <div class="row" style="min-height:48px">
+            <span class="tile" data-icon="file-text" data-size="16"></span>
+            <div class="txt"><b style="font-weight:500">reunion-2026-10-13.md</b>
+              <span class="sub">42:18 · 6 temas · <span data-i18n="ui.withAudio">con grabación</span></span></div>
+            <div class="ctl">
+              <button class="btn btn-soft btn-sm" data-i18n="ui.open">Abrir</button>
+              <button class="btn btn-danger btn-sm" data-icon="trash" data-size="13" title="Eliminar"></button>
+            </div>
+          </div>
+          <div class="row" style="min-height:48px">
+            <span class="tile" data-icon="file-text" data-size="16"></span>
+            <div class="txt"><b style="font-weight:500">charla-tecnica.md</b>
+              <span class="sub">2:14 · 3 temas</span></div>
+            <div class="ctl">
+              <button class="btn btn-soft btn-sm" data-i18n="ui.open">Abrir</button>
+              <button class="btn btn-danger btn-sm" data-icon="trash" data-size="13" title="Eliminar"></button>
+            </div>
+          </div>
+          <div class="row" style="min-height:48px">
+            <span class="tile" data-icon="file-text" data-size="16"></span>
+            <div class="txt"><b style="font-weight:500">nota-rapida.txt</b>
+              <span class="sub">0:38 · sin temas</span></div>
+            <div class="ctl">
+              <button class="btn btn-soft btn-sm" data-i18n="ui.open">Abrir</button>
+              <button class="btn btn-danger btn-sm" data-icon="trash" data-size="13" title="Eliminar"></button>
+            </div>
+          </div>
+        </div>
+
+        <div class="group" id="editor">
+          <div class="g-head">
+            <h3 id="docName">reunion-2026-10-13.md</h3>
+            <span class="hint">42:18 · 6 temas</span>
+          </div>
+          <div class="row stack">
+            <textarea spellcheck="false">## Reunión — 13 oct 2026
+
+**Duración:** 42:18 · **Fuente:** sistema + micrófono · **Motor:** GPU Vulkan (turbo)
+
+### Temas
+- Motor Vulkan y tiempos de transcripción
+- Diccionario de términos técnicos
+- Captura por aplicación (process loopback)
+
+### Transcripción
+[00:00:12] Ya está el servidor Vulkan residente, cada dictado es una petición local.
+[00:00:31] Con turbo sobre la RX 9070, diez segundos se transcriben en 0,17 s.</textarea>
+            <div style="display:flex; gap:var(--sp-2); align-items:center">
+              <span class="sr-note" data-i18n="ui.savedHint">Se guarda solo en textos\, nunca sale de tu equipo</span>
+              <span style="flex:1 1 auto"></span>
+              <button class="btn btn-soft" data-i18n="ui.save">Guardar</button>
+              <button class="btn btn-soft btn-sm">.md</button>
+              <button class="btn btn-soft btn-sm">.txt</button>
+              <button class="btn btn-danger" id="btnDelete" data-i18n="ui.docDelete">Eliminar</button>
+              <button class="btn btn-ghost" data-i18n="ui.docClose">Cerrar</button>
+            </div>
+            <p class="hk-error" id="delWarn" hidden data-i18n="ui.delWarn">
+              Se eliminará el documento y su enlace a la grabación. No se borra el .wav.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- ATAJOS ---------- -->
+      <section data-sec="atajos" hidden>
+        <div class="pane-head">
+          <h2 data-i18n="ui.shortcuts">Atajos de teclado</h2>
+          <p data-i18n="ui.shortcutsHint">Se aplican en caliente, sin reiniciar</p>
+        </div>
+        <div class="group">
+          <div class="g-head"><h3 data-i18n="ui.grpKeys">Combinaciones</h3>
+            <span class="hint" data-i18n="ui.grpKeysHint">pulsa «Cambiar» y luego la combinación</span></div>
+          <div class="row">
+            <span class="tile accent" data-icon="mic" data-size="16"></span>
+            <div class="txt"><b data-i18n="ui.dictateKey">Dictado</b>
+              <span class="sub" data-i18n="ui.dictateHint">Inicia y para la escucha</span></div>
+            <div class="ctl"><kbd id="hkDict" data-hk="alt+q">Alt + Q</kbd>
+              <button class="btn btn-soft btn-sm" data-change="hkDict" data-i18n="ui.changeKey">Cambiar</button></div>
+          </div>
+          <div class="row">
+            <span class="tile" data-icon="x" data-size="16"></span>
+            <div class="txt"><b data-i18n="ui.cancelKey">Cancelar dictado</b>
+              <span class="sub" data-i18n="ui.cancelHint">Descarta lo dictado en curso</span></div>
+            <div class="ctl"><kbd id="hkCancel" data-hk="alt+e">Alt + E</kbd>
+              <button class="btn btn-soft btn-sm" data-change="hkCancel" data-i18n="ui.changeKey">Cambiar</button></div>
+          </div>
+          <div class="row" id="hkRow" hidden>
+            <div class="hk-capture" style="width:100%">
+              <span class="hk-pulse"></span>
+              <p data-i18n="ui.pressKeys">Pulsa la combinación de teclas…</p>
+              <button class="btn btn-soft btn-sm" id="hkAbort" data-i18n="ui.cancel">Cancelar</button>
+            </div>
+          </div>
+          <div class="row" id="hkErrRow" hidden>
+            <p class="hk-error" id="hkErr" style="margin:0"></p>
+          </div>
+        </div>
+        <div class="group">
+          <div class="g-head"><h3 data-i18n="ui.grpMode">Modo de dictado</h3></div>
+          <div class="row">
+            <span class="tile" data-icon="sliders" data-size="16"></span>
+            <div class="txt"><b data-i18n="ui.mode">Pulsar o mantener</b>
+              <span class="sub" data-i18n="ui.modeHint">Con «mantener», hablas mientras la tecla está pulsada</span></div>
+            <div class="ctl seg" id="modeSeg" role="group">
+              <button aria-pressed="true" data-i18n="ui.modeToggle">Pulsar</button>
+              <button aria-pressed="false" data-i18n="ui.modeHold">Mantener</button>
+            </div>
+          </div>
+          <div class="row">
+            <span class="tile" data-icon="zap" data-size="16"></span>
+            <div class="txt"><b data-i18n="ui.pause2">Parada por pausa</b>
+              <span class="sub" data-i18n="ui.pause2Hint">Si callas 2 s, transcribe y pega solo</span></div>
+            <div class="ctl"><button class="switch" role="switch" aria-checked="true"><span class="sw-thumb"></span></button></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------- APARIENCIA ---------- -->
+      <section data-sec="apariencia" hidden>
+        <div class="pane-head">
+          <h2 data-i18n="ui.appearance">Apariencia</h2>
+          <p data-i18n="ui.appearanceHint">Se aplica a la vez al panel y a la isla</p>
+        </div>
+        <div class="group">
+          <div class="g-head"><h3 data-i18n="ui.theme">Tema</h3>
+            <span class="hint" data-i18n="ui.themeHint">el interruptor vive en la cabecera</span></div>
+          <div class="row">
+            <span class="tile accent" data-icon="moon" data-size="16"></span>
+            <div class="txt"><b data-i18n="ui.themeDark">Oscuro</b>
+              <span class="sub" data-i18n="ui.themeDarkHint">Isla de grafito #0E0F13, texto claro</span></div>
+            <div class="ctl"><button class="switch" id="swDark" role="switch" aria-checked="true"><span class="sw-thumb"></span></button></div>
+          </div>
+          <div class="row">
+            <span class="tile" data-icon="monitor" data-size="16"></span>
+            <div class="txt"><b data-i18n="ui.follow">Seguir al sistema</b>
+              <span class="sub" data-i18n="ui.followHint">Cambia con Windows (claro ↔ oscuro)</span></div>
+            <div class="ctl"><button class="switch" role="switch" aria-checked="false"><span class="sw-thumb"></span></button></div>
+          </div>
+        </div>
+        <div class="group">
+          <div class="g-head"><h3 data-i18n="ui.grpIsland">La isla</h3>
+            <span class="hint" data-i18n="ui.grpIslandHint">única ventana flotante de dicta</span></div>
+          <div class="row">
+            <span class="tile" data-icon="wave" data-size="16"></span>
+            <div class="txt"><b data-i18n="ui.islandPos">Posición</b>
+              <span class="sub" data-i18n="ui.islandPosHint">Colgando del borde superior, centrada</span></div>
+            <div class="ctl seg" id="posSeg" role="group">
+              <button aria-pressed="true" data-i18n="ui.posTop">Arriba</button>
+              <button aria-pressed="false" data-i18n="ui.posBottom">Abajo</button>
+            </div>
+          </div>
+          <div class="row">
+            <span class="tile" data-icon="mic-off" data-size="16"></span>
+            <div class="txt"><b data-i18n="ui.islandText">Mostrar la transcripción en la isla</b>
+              <span class="sub" data-i18n="ui.islandTextHint">La isla se ensancha hacia el ancho del texto</span></div>
+            <div class="ctl"><button class="switch" role="switch" aria-checked="true"><span class="sw-thumb"></span></button></div>
+          </div>
+          <div class="row stack">
+            <div style="display:flex; align-items:center; gap:var(--sp-3); width:100%">
+              <span class="tile" data-icon="gauge" data-size="16"></span>
+              <div class="txt" style="flex:1 1 auto"><b data-i18n="ui.islandBright">Brillo del aro de actividad</b>
+                <span class="sub" data-i18n="ui.islandBrightHint">Visible sobre fondos claros y oscuros</span></div>
+              <span class="val" style="min-width:3.6ch">72 %</span>
+            </div>
+            <div class="slider" data-slider="0.72" tabindex="0" role="slider" aria-valuemin="0" aria-valuemax="100" aria-valuenow="72" aria-label="Brillo">
+              <div class="track"><div class="fill"></div></div><div class="thumb"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <!-- ================================ pie ================================ -->
+  <footer class="app-foot">
+    <button class="btn btn-ghost" id="btnQuit"><span data-icon="power" data-size="15"></span>
+      <span data-i18n="ui.quit">Salir</span></button>
+    <span class="ver" id="ver">v1.0</span>
+    <span class="foot-sp"></span>
+    <button class="btn btn-soft" id="btnTest"><span data-icon="mic" data-size="15"></span>
+      <span data-i18n="ui.test">Probar micrófono</span></button>
+    <button class="btn btn-primary" id="btnDone" data-i18n="ui.done">Listo</button>
+  </footer>
+
+</div>
+</div>
+
+<div class="mock-note">
+  <b>Qué cambia frente al panel actual</b>
+  <ul>
+    <li><b>Raíl de secciones</b> en vez de una tirada larga de bloques: cada ajuste queda a un clic y siempre en el mismo sitio.</li>
+    <li><b>Filas de ajuste agrupadas</b> (azulejo de icono + título + ayuda + control a la derecha) en vez de tarjetas sueltas con el mismo patrón. La mitad de alto, mucho más fácil de recorrer con la vista.</li>
+    <li><b>Iconos SVG en línea</b> en cada fila: el tipo de ajuste se reconoce antes de leer.</li>
+    <li><b>Sin bordes</b>: los grupos se delimitan con filo de luz (oscuro) o anillo hairline (claro). El <i>hover</i> de un relleno es <code>--surface-3</code>, no un borde que se aclara.</li>
+    <li><b>Un solo registro de estado</b>: el pie mantiene Salir / Probar micrófono / Listo, pero «Probar micrófono» ya no abre nada nativo: se despliega en la propia página con su medidor.</li>
+    <li>Toda la maqueta responde al mismo diccionario <code>data-i18n</code> de la app real: aquí solo hay <code>es</code> y <code>en</code>, con las claves que ya existen (<code>ui.dictAdd</code>, <code>ui.meetSave</code>, <code>ui.pressKeys</code>…).</li>
+  </ul>
+</div>
+
+<script>
+/* ==========================================================================
+   1 · Iconos: mismo mapa y mismos parámetros que el catálogo (rejilla 24,
+       trazo 1,8 / 2 por debajo de 18 px, currentColor).
+   2 · i18n: mismas claves que panel/app.js.
+   3 · Interacciones: nada simulado a medias — conmutar raíl, tema, idioma,
+       interruptores, chips, atajos, estados de reunión y cola.
+   ========================================================================== */
+const ICONS = {
+  wave:'<path d="M3 10v4M7.5 7.5v9M12 4.5v15M16.5 7.5v9M21 10v4"/>',
+  mic:'<rect x="9" y="2.5" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0"/><path d="M12 17.5V21M8.5 21h7"/>',
+  'mic-off':'<path d="M15 5.5v-1a3 3 0 0 0-6 0v7M9 12.4a3 3 0 0 0 4.7 2.1"/><path d="M5.5 11a6.5 6.5 0 0 0 9.9 5.6M12 17.5V21M8.5 21h7M3.5 3.5l17 17"/>',
+  globe:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.6 2.5 3.9 5.5 3.9 9s-1.3 6.5-3.9 9c-2.6-2.5-3.9-5.5-3.9-9S9.4 5.5 12 3z"/>',
+  chip:'<rect x="6.5" y="6.5" width="11" height="11" rx="2.5"/><path d="M10 10h4v4h-4z"/><path d="M10 2.5v4M14 2.5v4M10 17.5v4M14 17.5v4M2.5 10h4M2.5 14h4M17.5 10h4M17.5 14h4"/>',
+  layers:'<path d="M12 2.8l8.4 4.3L12 11.4 3.6 7.1 12 2.8z"/><path d="M3.6 12.1L12 16.4l8.4-4.3"/><path d="M3.6 16.7L12 21l8.4-4.3"/>',
+  gauge:'<path d="M3.5 17.5a9 9 0 1 1 17 0"/><path d="M12 17.5l4.2-6.4"/><circle cx="12" cy="17.5" r="1.1"/>',
+  book:'<path d="M12 6.6C10.6 5.1 8.8 4.3 6.6 4.3H3.8V19h2.8c2.2 0 4 .8 5.4 2.2 1.4-1.4 3.2-2.2 5.4-2.2h2.8V4.3h-2.8c-2.2 0-4 .8-5.4 2.3z"/><path d="M12 6.6v14.6"/>',
+  speaker:'<path d="M11 4.6L6.6 8.5H3.2v7h3.4L11 19.4z"/><path d="M14.8 9.7a3.4 3.4 0 0 1 0 4.6"/><path d="M17.6 6.9a7.4 7.4 0 0 1 0 10.2"/>',
+  monitor:'<rect x="2.5" y="4" width="19" height="13" rx="2.5"/><path d="M8.5 21h7M12 17v4"/>',
+  users:'<circle cx="9.2" cy="8" r="3.2"/><path d="M3.2 20a6 6 0 0 1 12 0"/><path d="M16.4 5.3a3.2 3.2 0 0 1 0 5.4"/><path d="M17.8 14.3a6 6 0 0 1 3 5.7"/>',
+  'file-audio':'<path d="M13 3.2H7.2a2 2 0 0 0-2 2v13.6a2 2 0 0 0 2 2h9.6a2 2 0 0 0 2-2V9z"/><path d="M13 3.2V9h5.8"/><path d="M10.6 17.4v-3.1l4-.9v3.1"/><circle cx="9.5" cy="17.6" r="1.2"/><circle cx="13.5" cy="16.7" r="1.2"/>',
+  'file-text':'<path d="M13 3.2H7.2a2 2 0 0 0-2 2v13.6a2 2 0 0 0 2 2h9.6a2 2 0 0 0 2-2V9z"/><path d="M13 3.2V9h5.8"/><path d="M8.6 13h6.8M8.6 16.6h4.4"/>',
+  keyboard:'<rect x="2.5" y="6" width="19" height="12" rx="2.5"/><path d="M6 9.6h.01M9.4 9.6h.01M12.8 9.6h.01M16.2 9.6h.01M6 13h.01M18 13h.01M9.4 13h5.2"/>',
+  folder:'<path d="M3.5 6.6a2 2 0 0 1 2-2h3.1l2 2.5h7.9a2 2 0 0 1 2 2v8.4a2 2 0 0 1-2 2H5.5a2 2 0 0 1-2-2z"/>',
+  trash:'<path d="M4.5 6.5h15"/><path d="M9.5 6.5V4.8a1.3 1.3 0 0 1 1.3-1.3h2.4a1.3 1.3 0 0 1 1.3 1.3v1.7"/><path d="M6.5 6.5l1 12.1a1.6 1.6 0 0 0 1.6 1.4h5.8a1.6 1.6 0 0 0 1.6-1.4l1-12.1"/>',
+  play:'<path d="M7.5 5.2l11 6.8-11 6.8z"/>',
+  pause:'<path d="M9.2 5.5v13M14.8 5.5v13"/>',
+  stop:'<rect x="6.5" y="6.5" width="11" height="11" rx="2.5"/>',
+  plus:'<path d="M12 5v14M5 12h14"/>',
+  x:'<path d="M6 6l12 12M18 6L6 18"/>',
+  check:'<path d="M4.8 12.6l4.8 4.8L19.2 6.8"/>',
+  download:'<path d="M12 3.5v11"/><path d="M7.6 10.4L12 14.8l4.4-4.4"/><path d="M4.5 19.5h15"/>',
+  refresh:'<path d="M20 12a8 8 0 1 1-2.5-5.8"/><path d="M20.3 4.4v4.3h-4.3"/>',
+  sliders:'<path d="M4 7.5h9M17.5 7.5H20M4 16.5h2.5M11 16.5h9"/><circle cx="15.2" cy="7.5" r="2.2"/><circle cx="8.7" cy="16.5" r="2.2"/>',
+  power:'<path d="M12 3.5v8"/><path d="M7.3 6.5a7 7 0 1 0 9.4 0"/>',
+  sparkle:'<path d="M12 3.4l1.7 4.9 4.9 1.7-4.9 1.7L12 16.6l-1.7-4.9L5.4 10l4.9-1.7z"/><path d="M18.4 16.4l.7 2 2 .7-2 .7-.7 2-.7-2-2-.7 2-.7z"/>',
+  clipboard:'<rect x="8.5" y="3.5" width="7" height="4" rx="1.5"/><path d="M15.5 5.5h1.7a2 2 0 0 1 2 2v10.7a2 2 0 0 1-2 2H6.8a2 2 0 0 1-2-2V7.5a2 2 0 0 1 2-2h1.7"/><path d="M8 12.5h8M8 16h5"/>',
+  zap:'<path d="M13.4 3L5.6 13.4h5L10.6 21l7.8-10.4h-5z"/>',
+  sun:'<circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M5.2 18.8l1.4-1.4M17.4 6.6l1.4-1.4"/>',
+  moon:'<path d="M20.5 13.4A8.6 8.6 0 0 1 10.6 3.5a8.6 8.6 0 1 0 9.9 9.9z"/>',
+  'chevron-down':'<path d="M6 9.5l6 6 6-6"/>',
+  'mic-off':'<path d="M15 5.5v-1a3 3 0 0 0-6 0v7M9 12.4a3 3 0 0 0 4.7 2.1"/><path d="M5.5 11a6.5 6.5 0 0 0 9.9 5.6M12 17.5V21M8.5 21h7M3.5 3.5l17 17"/>',
+  'file-audio':'<path d="M13 3.2H7.2a2 2 0 0 0-2 2v13.6a2 2 0 0 0 2 2h9.6a2 2 0 0 0 2-2V9z"/><path d="M13 3.2V9h5.8"/><path d="M10.6 17.4v-3.1l4-.9v3.1"/><circle cx="9.5" cy="17.6" r="1.2"/><circle cx="13.5" cy="16.7" r="1.2"/>',
+  'file-text':'<path d="M13 3.2H7.2a2 2 0 0 0-2 2v13.6a2 2 0 0 0 2 2h9.6a2 2 0 0 0 2-2V9z"/><path d="M13 3.2V9h5.8"/><path d="M8.6 13h6.8M8.6 16.6h4.4"/>'
+};
+const USES_SW = 2;
+function paintIcons(root = document) {
+  root.querySelectorAll("[data-icon]").forEach(el => {
+    const body = ICONS[el.dataset.icon]; if (!body) return;
+    const size = +(el.dataset.size || 20);
+    const sw = el.dataset.sw ? +el.dataset.sw : (size <= 18 ? USES_SW : 1.8);
+    el.innerHTML = `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor"
+      stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${body}</svg>`;
+    el.style.display = "inline-grid";
+    el.style.placeItems = "center";
+  });
+}
+
+/* ---------------------------- i18n ---------------------------- */
+const I18N = {
+  es: {
+    "ui.title":"Ajustes","ui.subtitle":"Dictado por voz, 100 % local y privado",
+    "ui.statusReady":"Listo para dictar","ui.statusListening":"Escuchando…","ui.statusTranscribing":"Transcribiendo…",
+    "ui.secDictation":"Dictado","ui.secDictationHint":"Lo que se usa cuando pulsas el atajo",
+    "ui.secAppearance":"Apariencia",
+    "ui.grpRecognition":"Reconocimiento","ui.grpRecognitionHint":"se aplica al siguiente dictado, sin reiniciar",
+    "ui.language":"Idioma","ui.languageHint":"Reconocimiento e interfaz a la vez",
+    "ui.engine":"Motor","ui.engineAuto":"Automático","ui.model":"Modelo",
+    "ui.modelHintSpeed":"Precisión frente a velocidad","ui.mic":"Micrófono",
+    "ui.sens":"Sensibilidad","ui.sensHint":"ganancia aplicada antes de transcribir",
+    "ui.sensPeak":"Umbral de voz","ui.sensPeakHint":"Sube si se cuela ruido de fondo; baja si te come palabras",
+    "ui.sensLow":"Solo voces claras","ui.sensHigh":"Capta susurros",
+    "ui.grpAfter":"Al terminar el dictado","ui.keepClip":"Guardar también en el portapapeles",
+    "ui.keepClipHint":"Se conserva aunque el pegado automático sea rechazado",
+    "ui.autoHide":"Ocultar la isla al pegar","ui.autoHideHint":"Desaparece al instante, sin quedarse encendida",
+    "ui.dict":"Diccionario","ui.dictPaneHint":"Va como prompt en cada petición: mejora nombres propios y jerga",
+    "ui.dictTerms":"Términos","ui.dictPlaceholder":"Escribe una palabra y pulsa Intro","ui.dictAdd":"Añadir",
+    "ui.dictEmpty":"Aún no hay palabras. Añade términos que dictas a menudo.",
+    "ui.dictHow":"Cómo se usa","ui.dictPrompt":"Prompt de reconocimiento",
+    "ui.dictPromptHint":"Se manda junto al audio; no reinicia el servidor",
+    "ui.dictStored":"Se guarda en dicta_config.json","ui.dictStoredHint":"Junto a la aplicación, legible y editable a mano",
+    "ui.dictOpen":"Abrir carpeta",
+    "ui.meeting":"Reunión","ui.meetingHint":"Sistema + micrófono, grabado en .wav",
+    "ui.meetSource":"Fuente de audio","ui.meetSourceHint":"De dónde se captura el audio",
+    "ui.srcAll":"Todo el sistema (altavoz por defecto)",
+    "ui.meetTitle":"Inicia la grabación de la reunión",
+    "ui.meetDesc":"Captura el audio del sistema y del micrófono, guarda la grabación en .wav y transcribe en vivo.",
+    "ui.startMeeting":"Iniciar","ui.rec":"REC","ui.pause":"Pausar","ui.resume":"Reanudar",
+    "ui.meetSave":"Guardar y terminar","ui.meetCancel":"Cancelar","ui.meetOpen":"Abrir documento",
+    "ui.meetDl":"Descargar grabación","ui.sys":"Sistema","ui.doneMeeting":"Reunión guardada en textos\\",
+    "ui.audios":"Audios","ui.audiosHint":"Sube uno o varios; se transcriben en cola","ui.queue":"Cola",
+    "ui.dropTitle":"Arrastra archivos aquí","ui.dropHint":"wav, flac, ogg — mp3/m4a si hay ffmpeg",
+    "ui.pickFiles":"Elegir archivos…","ui.preview":"Vista previa antes de transcribir",
+    "ui.previewHint":"picos reales, clic para saltar",
+    "ui.docs":"Documentos","ui.docsHint":"Todo lo transcrito queda en textos\\","ui.docsList":"Generados",
+    "ui.withAudio":"con grabación","ui.open":"Abrir","ui.save":"Guardar","ui.docDelete":"Eliminar",
+    "ui.docClose":"Cerrar","ui.docName":"Nombre del documento",
+    "ui.delWarn":"Se eliminará el documento y su enlace a la grabación. No se borra el .wav.",
+    "ui.savedHint":"Se guarda solo en textos\\, nunca sale de tu equipo",
+    "ui.shortcuts":"Atajos de teclado","ui.shortcutsHint":"Se aplican en caliente, sin reiniciar",
+    "ui.grpKeys":"Combinaciones","ui.grpKeysHint":"pulsa «Cambiar» y luego la combinación",
+    "ui.dictateKey":"Dictado","ui.dictateHint":"Inicia y para la escucha",
+    "ui.cancelKey":"Cancelar dictado","ui.cancelHint":"Descarta lo dictado en curso",
+    "ui.changeKey":"Cambiar","ui.pressKeys":"Pulsa la combinación de teclas…","ui.cancel":"Cancelar",
+    "ui.grpMode":"Modo de dictado","ui.mode":"Pulsar o mantener",
+    "ui.modeHint":"Con «mantener», hablas mientras la tecla está pulsada",
+    "ui.modeToggle":"Pulsar","ui.modeHold":"Mantener","ui.pause2":"Parada por pausa",
+    "ui.pause2Hint":"Si callas 2 s, transcribe y pega solo",
+    "ui.appearance":"Apariencia","ui.appearanceHint":"Se aplica a la vez al panel y a la isla",
+    "ui.theme":"Tema","ui.themeHint":"el interruptor vive en la cabecera",
+    "ui.themeDark":"Oscuro","ui.themeDarkHint":"Isla de grafito #0E0F13, texto claro",
+    "ui.follow":"Seguir al sistema","ui.followHint":"Cambia con Windows (claro ↔ oscuro)",
+    "ui.grpIsland":"La isla","ui.grpIslandHint":"única ventana flotante de dicta",
+    "ui.islandPos":"Posición","ui.islandPosHint":"Colgando del borde superior, centrada",
+    "ui.posTop":"Arriba","ui.posBottom":"Abajo",
+    "ui.islandText":"Mostrar la transcripción en la isla","ui.islandTextHint":"La isla se ensancha hacia el ancho del texto",
+    "ui.islandBright":"Brillo del aro de actividad","ui.islandBrightHint":"Visible sobre fondos claros y oscuros",
+    "ui.engineState":"Motor","ui.uptime":"En marcha desde",
+    "ui.test":"Probar micrófono","ui.testTitle":"Probando el micrófono…",
+    "ui.testHint":"Habla en voz normal. La barra se mueve con tu voz.",
+    "ui.testOk":"Se te oye bien. Nivel medio: −18 dBFS",
+    "ui.testLow":"Casi no llega señal. ¿Micrófono silenciado en Windows?",
+    "ui.quit":"Salir","ui.done":"Listo","ui.hkTaken":"Windows ya usa esa combinación: se conserva la anterior"
+  },
+  en: {
+    "ui.title":"Settings","ui.subtitle":"Voice dictation, 100 % local and private",
+    "ui.statusReady":"Ready to dictate","ui.statusListening":"Listening…","ui.statusTranscribing":"Transcribing…",
+    "ui.secDictation":"Dictation","ui.secDictationHint":"What runs when you press the shortcut",
+    "ui.secAppearance":"Appearance",
+    "ui.grpRecognition":"Recognition","ui.grpRecognitionHint":"applies to the next dictation, no restart",
+    "ui.language":"Language","ui.languageHint":"Recognition and interface together",
+    "ui.engine":"Engine","ui.engineAuto":"Automatic","ui.model":"Model",
+    "ui.modelHintSpeed":"Accuracy versus speed","ui.mic":"Microphone",
+    "ui.sens":"Sensitivity","ui.sensHint":"gain applied before transcribing",
+    "ui.sensPeak":"Voice threshold","ui.sensPeakHint":"Raise it if background noise leaks in; lower it if words get cut",
+    "ui.sensLow":"Clear voices only","ui.sensHigh":"Picks up whispers",
+    "ui.grpAfter":"When dictation ends","ui.keepClip":"Also keep it in the clipboard",
+    "ui.keepClipHint":"Kept even if automatic pasting is refused",
+    "ui.autoHide":"Hide the island after pasting","ui.autoHideHint":"It disappears at once instead of staying on",
+    "ui.dict":"Dictionary","ui.dictPaneHint":"Sent as a prompt on every request: helps with names and jargon",
+    "ui.dictTerms":"Terms","ui.dictPlaceholder":"Type a word and press Enter","ui.dictAdd":"Add",
+    "ui.dictEmpty":"No words yet. Add terms you dictate often.",
+    "ui.dictHow":"How it works","ui.dictPrompt":"Recognition prompt",
+    "ui.dictPromptHint":"Sent along with the audio; the server is not restarted",
+    "ui.dictStored":"Stored in dicta_config.json","ui.dictStoredHint":"Next to the app, readable and editable by hand",
+    "ui.dictOpen":"Open folder",
+    "ui.meeting":"Meeting","ui.meetingHint":"System + microphone, recorded to .wav",
+    "ui.meetSource":"Audio source","ui.meetSourceHint":"Where the audio is captured from",
+    "ui.srcAll":"Whole system (default speaker)",
+    "ui.meetTitle":"Start recording the meeting",
+    "ui.meetDesc":"Captures system and microphone audio, saves the recording as .wav and transcribes live.",
+    "ui.startMeeting":"Start","ui.rec":"REC","ui.pause":"Pause","ui.resume":"Resume",
+    "ui.meetSave":"Save and finish","ui.meetCancel":"Cancel","ui.meetOpen":"Open document",
+    "ui.meetDl":"Download recording","ui.sys":"System","ui.doneMeeting":"Meeting saved to textos\\",
+    "ui.audios":"Audios","ui.audiosHint":"Upload one or more; they are transcribed in a queue","ui.queue":"Queue",
+    "ui.dropTitle":"Drop files here","ui.dropHint":"wav, flac, ogg — mp3/m4a with ffmpeg",
+    "ui.pickFiles":"Choose files…","ui.preview":"Preview before transcribing",
+    "ui.previewHint":"real peaks, click to seek",
+    "ui.docs":"Documents","ui.docsHint":"Everything transcribed lands in textos\\","ui.docsList":"Generated",
+    "ui.withAudio":"with recording","ui.open":"Open","ui.save":"Save","ui.docDelete":"Delete",
+    "ui.docClose":"Close","ui.docName":"Document name",
+    "ui.delWarn":"The document and its link to the recording will be deleted. The .wav is kept.",
+    "ui.savedHint":"Saved only in textos\\, it never leaves your machine",
+    "ui.shortcuts":"Keyboard shortcuts","ui.shortcutsHint":"Applied live, no restart",
+    "ui.grpKeys":"Combinations","ui.grpKeysHint":"press “Change”, then the combination",
+    "ui.dictateKey":"Dictation","ui.dictateHint":"Starts and stops listening",
+    "ui.cancelKey":"Cancel dictation","ui.cancelHint":"Discards what is being dictated",
+    "ui.changeKey":"Change","ui.pressKeys":"Press the key combination…","ui.cancel":"Cancel",
+    "ui.grpMode":"Dictation mode","ui.mode":"Press or hold",
+    "ui.modeHint":"With “hold”, you speak while the key is down",
+    "ui.modeToggle":"Press","ui.modeHold":"Hold","ui.pause2":"Stop on pause",
+    "ui.pause2Hint":"If you go quiet for 2 s, it transcribes and pastes",
+    "ui.appearance":"Appearance","ui.appearanceHint":"Applied to both the panel and the island",
+    "ui.theme":"Theme","ui.themeHint":"the switch lives in the header",
+    "ui.themeDark":"Dark","ui.themeDarkHint":"Graphite island #0E0F13, light text",
+    "ui.follow":"Follow the system","ui.followHint":"Changes with Windows (light ↔ dark)",
+    "ui.grpIsland":"The island","ui.grpIslandHint":"dicta's only floating window",
+    "ui.islandPos":"Position","ui.islandPosHint":"Hanging from the top edge, centred",
+    "ui.posTop":"Top","ui.posBottom":"Bottom",
+    "ui.islandText":"Show the transcript in the island","ui.islandTextHint":"The island widens towards the text width",
+    "ui.islandBright":"Activity ring brightness","ui.islandBrightHint":"Visible on both light and dark backgrounds",
+    "ui.engineState":"Engine","ui.uptime":"Running since",
+    "ui.test":"Test microphone","ui.testTitle":"Testing the microphone…",
+    "ui.testHint":"Speak normally. The bar follows your voice.",
+    "ui.testOk":"You sound fine. Average level: −18 dBFS",
+    "ui.testLow":"Hardly any signal. Is the microphone muted in Windows?",
+    "ui.quit":"Quit","ui.done":"Done","ui.hkTaken":"Windows already uses that combination: the previous one is kept"
+  }
+};
+let locale = "es";
+const T = k => (I18N[locale] && I18N[locale][k]) || (I18N.es[k] || k);
+function paintI18n() {
+  document.documentElement.lang = locale;
+  document.querySelectorAll("[data-i18n]").forEach(el => { el.textContent = T(el.dataset.i18n); });
+  document.querySelectorAll("[data-i18n-ph]").forEach(el => { el.placeholder = T(el.dataset.i18nPh); });
+  document.querySelectorAll("[data-i18n-aria]").forEach(el => { el.setAttribute("aria-label", T(el.dataset.i18nAria)); });
+}
+
+/* ---------------------------- tema ---------------------------- */
+function setTheme(t) {
+  document.documentElement.dataset.theme = t;
+  document.querySelectorAll(".theme-switch").forEach(sw => {
+    sw.dataset.val = t;
+    sw.querySelectorAll(".ts-opt").forEach(o => o.setAttribute("aria-checked", String(o.dataset.val === t)));
+  });
+  const swDark = document.getElementById("swDark");
+  if (swDark) swDark.setAttribute("aria-checked", String(t === "dark"));
+}
+
+/* ---------------------------- raíl ---------------------------- */
+function go(sec) {
+  document.querySelectorAll(".rail-item").forEach(b => b.setAttribute("aria-current", String(b.dataset.sec === sec)));
+  document.querySelectorAll(".pane > section").forEach(s => { s.hidden = s.dataset.sec !== sec; });
+  document.getElementById("pane").scrollTop = 0;
+}
+
+/* ---------------------------- slider ---------------------------- */
+function initSlider(sl, onChange) {
+  const fill = sl.querySelector(".fill"), thumb = sl.querySelector(".thumb");
+  const set = v => {
+    v = Math.max(0, Math.min(1, v));
+    fill.style.width = (v * 100) + "%"; thumb.style.left = (v * 100) + "%";
+    sl.setAttribute("aria-valuenow", String(Math.round(v * 100)));
+    if (onChange) onChange(v);
+  };
+  set(parseFloat(sl.dataset.slider || "0.5"));
+  const move = e => { const r = sl.getBoundingClientRect(); set((e.clientX - r.left) / r.width); };
+  sl.addEventListener("pointerdown", e => { sl.setPointerCapture(e.pointerId); move(e); });
+  sl.addEventListener("pointermove", e => { if (sl.hasPointerCapture(e.pointerId)) move(e); });
+  sl.addEventListener("keydown", e => {
+    const cur = parseFloat(sl.getAttribute("aria-valuenow") || "50") / 100;
+    if (e.key === "ArrowLeft" || e.key === "ArrowDown") { set(cur - .05); e.preventDefault(); }
+    if (e.key === "ArrowRight" || e.key === "ArrowUp") { set(cur + .05); e.preventDefault(); }
+  });
+}
+
+/* ---------------------------- onda ---------------------------- */
+function paintWave(track, progress) {
+  if (!track) return;
+  const W = track.clientWidth || 360, H = track.clientHeight || 32;
+  const bars = Math.max(28, Math.floor(W / 3.1));
+  const played = progress == null ? 0.32 : progress;
+  let d = "", dOn = "";
+  for (let i = 0; i < bars; i++) {
+    const t = i / bars;
+    const a = Math.abs(Math.sin(t * 9.1) * .5 + Math.sin(t * 23.7) * .28 + Math.sin(t * 41.3) * .16);
+    const h = Math.max(2, a * (H - 10));
+    const x = (i * 3.1 + 1.55).toFixed(1), y = (H / 2).toFixed(1);
+    const seg = `M${x} ${(+y - h / 2).toFixed(1)}v${h.toFixed(1)}`;
+    (t <= played ? (dOn += seg) : (d += seg));
+  }
+  track.innerHTML =
+    `<svg viewBox="0 0 ${W} ${H}" width="100%" height="100%" preserveAspectRatio="none" fill="none"
+       stroke="var(--line-strong)" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="${d}"/></svg>
+     <svg viewBox="0 0 ${W} ${H}" width="100%" height="100%" preserveAspectRatio="none" fill="none"
+       stroke="var(--accent)" stroke-width="2" stroke-linecap="round" aria-hidden="true"
+       style="position:absolute;inset:0"><path d="${dOn}"/></svg>`;
+}
+
+/* ---------------------------- reunión ---------------------------- */
+const MEET = { t: 0, iv: null, paused: false, lv: [0, 0] };
+const LINES = [
+  ['Sistema', "…el build de Vulkan ya compila los shaders al arrancar."],
+  ['Micrófono', "Ya, así el primer dictado no espera."],
+  ['Sistema', "Y el idioma va en cada petición, no al arrancar el servidor."],
+  ['Micrófono', "Perfecto, entonces el cambio de idioma es inmediato."]
+];
+function meetTick() {
+  if (MEET.paused) return;
+  MEET.t++;
+  document.getElementById("meetTimer").textContent = fmt(MEET.t);
+  MEET.lv = MEET.lv.map(() => .15 + Math.random() * .8);
+  document.getElementById("lvSys").style.transform = `scaleY(${MEET.lv[0].toFixed(3)})`;
+  document.getElementById("lvMic").style.transform = `scaleY(${MEET.lv[1].toFixed(3)})`;
+  if (MEET.t % 4 === 1) {
+    const [who, txt] = LINES[Math.floor(MEET.t / 4) % LINES.length];
+    const p = document.getElementById("meetTranscript");
+    p.insertAdjacentHTML("beforeend",
+      `<div><span class="who${who === 'Micrófono' ? ' mic' : ''}">${who}:</span> ${txt}</div>`);
+    p.scrollTop = p.scrollHeight;
+  }
+}
+const fmt = s => [Math.floor(s / 3600), Math.floor(s / 60) % 60, s % 60]
+  .map(n => String(n).padStart(2, "0")).join(":");
+
+/* ---------------------------- eventos ---------------------------- */
+document.addEventListener("click", e => {
+  const ts = e.target.closest(".ts-opt");
+  if (ts) { setTheme(ts.dataset.val); return; }
+
+  const langBtn = e.target.closest("#langSeg button");     // antes que .seg: #langSeg también es .seg
+  if (langBtn) {
+    locale = langBtn.dataset.lang;
+    [...langBtn.parentElement.children].forEach(b => b.setAttribute("aria-pressed", String(b === langBtn)));
+    paintI18n();
+    return;
+  }
+  const seg = e.target.closest(".seg button");
+  if (seg) {
+    [...seg.parentElement.children].forEach(b => b.setAttribute("aria-pressed", String(b === seg)));
+    if (seg.parentElement.id === "modeSeg" && seg.dataset.i18n === "ui.modeHold") {
+      // en modo mantener, la pista lo dice en la cabecera de estado
+      document.getElementById("statusText").textContent = T("ui.modeHold");
+    }
+    return;
+  }
+  const rail = e.target.closest(".rail-item");
+  if (rail) { go(rail.dataset.sec); return; }
+
+  const sw = e.target.closest(".switch");
+  if (sw) { sw.setAttribute("aria-checked", sw.getAttribute("aria-checked") !== "true"); return; }
+
+  const sb = e.target.closest(".step-btn");
+  if (sb) { const sl = document.getElementById(sb.dataset.slider), st = +(sl.dataset.slider || .5);
+    sl.dataset.slider = String(Math.max(0, Math.min(1, st + (+sb.dataset.step)))); initSlider(sl); return; }
+
+  const chipX = e.target.closest(".chip button");
+  if (chipX) { chipX.closest(".chip").remove(); updDict(); return; }
+
+  const change = e.target.closest("[data-change]");
+  if (change) { startCapture(change.dataset.change); return; }
+  if (e.target.closest("#hkAbort")) { stopCapture(); return; }
+
+  const play = e.target.closest(".pv-play");
+  if (play) {
+    const on = play.dataset.state === "playing";
+    play.dataset.state = on ? "idle" : "playing";
+    play.innerHTML = on ? svgEl("play", 14) : svgEl("pause", 14);
+    return;
+  }
+  if (e.target.closest("#btnMeetStart")) {
+    document.getElementById("meetIdle").hidden = true;
+    document.getElementById("meetLive").hidden = false;
+    MEET.t = 0; MEET.paused = false;
+    document.getElementById("meetTranscript").innerHTML = "";
+    document.getElementById("recPill").classList.remove("paused");
+    clearInterval(MEET.iv); MEET.iv = setInterval(meetTick, 1000); meetTick();
+    document.getElementById("statusDot").className = "dot busy";
+    document.getElementById("statusText").textContent = T("ui.statusListening");
+    return;
+  }
+  if (e.target.closest("#btnMeetPause")) {
+    MEET.paused = !MEET.paused;
+    const pill = document.getElementById("recPill");
+    pill.classList.toggle("paused", MEET.paused);
+    e.target.closest("button").textContent = MEET.paused ? T("ui.resume") : T("ui.pause");
+    return;
+  }
+  if (e.target.closest("#btnMeetStop")) {
+    clearInterval(MEET.iv);
+    document.getElementById("meetLive").hidden = true;
+    document.getElementById("meetDone").hidden = false;
+    document.getElementById("meetDoneText").textContent = T("ui.doneMeeting") + "reunion-2026-10-13.md";
+    document.getElementById("statusDot").className = "dot";
+    document.getElementById("statusText").textContent = T("ui.statusReady");
+    paintWave(document.getElementById("meetWave")); return;
+  }
+  if (e.target.closest("#btnMeetCancel") || e.target.closest("#btnMeetDismiss")) {
+    clearInterval(MEET.iv);
+    document.getElementById("meetLive").hidden = true;
+    document.getElementById("meetDone").hidden = true;
+    document.getElementById("meetIdle").hidden = false;
+    document.getElementById("statusDot").className = "dot";
+    document.getElementById("statusText").textContent = T("ui.statusReady");
+    return;
+  }
+  if (e.target.closest("#btnDelete")) {
+    const w = document.getElementById("delWarn");
+    const btn = e.target.closest("#btnDelete");
+    if (!btn.classList.contains("confirm")) { btn.classList.add("confirm"); btn.textContent = T("ui.docDelete") + " ✔"; w.hidden = false; }
+    else { document.getElementById("editor").hidden = true; }
+    return;
+  }
+  if (e.target.closest("#btnTest")) {
+    const p = document.getElementById("probe");
+    p.hidden = false; runProbe(); return;
+  }
+  if (e.target.closest("#probeStop")) {
+    document.getElementById("probe").hidden = true; stopProbe(); return;
+  }
+  if (e.target.closest("#btnQuit") || e.target.closest("#btnDone")) {
+    const b = e.target.closest("button");
+    const old = b.textContent; b.textContent = T("ui.statusReady");
+    setTimeout(() => b.textContent = old, 900);
+    return;
+  }
+  const addBtn = e.target.closest("#dictAdd");
+  if (addBtn) { addTerm(); return; }
+});
+
+document.addEventListener("keydown", e => {
+  if (e.target.id === "dictInput" && e.key === "Enter") addTerm();
+  if (CAP.arm) captureKey(e);
+});
+
+/* diccionario */
+const TERMS = ["kwtsk", "OpenCode", "RX 9070", "whisper-server", "WASAPI", "process loopback"];
+function renderChips() {
+  const arr = TERMS.filter(Boolean);
+  document.getElementById("chips").innerHTML = arr.map(t =>
+    `<span class="chip">${t}<button title="Quitar" aria-label="Quitar">×</button></span>`).join("");
+  document.getElementById("dictCount").textContent = arr.length;
+  document.getElementById("dictHint").textContent = arr.length
+    ? `${arr.length} ${locale === 'en' ? 'terms · sent to whisper every time' : 'términos · se envían a whisper cada vez'}`
+    : T("ui.dictEmpty");
+  document.getElementById("dictEmpty").hidden = arr.length > 0;
+}
+function addTerm() {
+  const i = document.getElementById("dictInput"), v = i.value.trim();
+  if (!v) return;
+  TERMS.push(v); i.value = ""; renderChips();
+}
+function updDict() { renderChips(); }
+
+/* captura de atajo */
+const CAP = { arm: null };
+function startCapture(id) {
+  CAP.arm = id;
+  document.getElementById(id).classList.add("capturing");
+  document.getElementById(id).textContent = "…";
+  document.getElementById("hkRow").hidden = false;
+  document.getElementById("hkErrRow").hidden = true;
+}
+function stopCapture() {
+  if (CAP.arm) {
+    const el = document.getElementById(CAP.arm);
+    el.textContent = el.dataset.hk.split("+").map(s => s.toUpperCase()).join(" + ");
+    el.classList.remove("capturing");
+  }
+  CAP.arm = null;
+  document.getElementById("hkRow").hidden = true;
+}
+function captureKey(e) {
+  e.preventDefault();
+  if (e.key === "Escape") { stopCapture(); return; }
+  if (["Control", "Alt", "Shift", "Meta"].includes(e.key)) return;
+  const parts = [];
+  if (e.ctrlKey) parts.push("ctrl");
+  if (e.altKey) parts.push("alt");
+  if (e.shiftKey) parts.push("shift");
+  parts.push(e.key.toLowerCase());
+  if (parts.length < 2) return;                      // hace falta modificador
+  if (e.ctrlKey && e.shiftKey && e.key.toLowerCase() === "q") {   // ya ocupado por Windows
+    const el = document.getElementById(CAP.arm);
+    el.textContent = el.dataset.hk.split("+").map(s => s.toUpperCase()).join(" + ");
+    el.classList.remove("capturing");
+    CAP.arm = null;
+    document.getElementById("hkRow").hidden = true;
+    document.getElementById("hkErrRow").hidden = false;
+    document.getElementById("hkErr").textContent = T("ui.hkTaken");
+    return;
+  }
+  const el = document.getElementById(CAP.arm);
+  el.dataset.hk = parts.join("+");
+  el.textContent = parts.map(s => s.toUpperCase()).join(" + ");
+  el.classList.remove("capturing");
+  CAP.arm = null;
+  document.getElementById("hkRow").hidden = true;
+}
+function svgEl(name, size) {
+  const sw = size <= 18 ? 2 : 1.8;
+  return `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor"
+    stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[name]}</svg>`;
+}
+
+/* prueba de micrófono */
+let probeIv = null, probePeak = 0;
+function runProbe() {
+  const bar = document.getElementById("probeBar"), msg = document.getElementById("probeMsg");
+  msg.textContent = T("ui.testHint"); probePeak = 0;
+  clearInterval(probeIv);
+  let n = 0;
+  probeIv = setInterval(() => {
+    const v = Math.random() < .12 ? .02 + Math.random() * .1 : .3 + Math.random() * .6;
+    probePeak = Math.max(probePeak * .995, v);
+    bar.style.width = (v * 100).toFixed(0) + "%";
+    bar.style.background = v < .18 ? "var(--warn)" : "var(--ok)";
+    if (++n > 40) { clearInterval(probeIv); msg.textContent = probePeak < .2 ? T("ui.testLow") : T("ui.testOk");
+      bar.style.width = "0%"; }
+  }, 110);
+}
+function stopProbe() { clearInterval(probeIv); document.getElementById("probeBar").style.width = "0%"; }
+
+/* cola: la fila en curso avanza sola */
+function runQueue() {
+  const p = document.getElementById("qProg"), eta = document.getElementById("qEta");
+  let v = 6;
+  setInterval(() => {
+    v = v >= 100 ? 6 : v + 0.7;
+    p.style.width = v + "%";
+    eta.textContent = fmt(Math.round((100 - v) * .34));
+  }, 260);
+}
+
+/* encaje de la ventana en la pantalla actual */
+function fit() {
+  const app = document.getElementById("app"), stage = document.getElementById("stage");
+  const availW = stage.clientWidth, availH = window.innerHeight - 190;
+  const s = Math.min(1, availW / 1060, Math.max(.42, availH / 820));
+  app.style.transform = `scale(${s.toFixed(4)})`;
+  stage.style.height = (820 * s + 8) + "px";
+}
+
+document.addEventListener("DOMContentLoaded", () => {
+  setTheme("dark");
+  paintIcons();
+  paintI18n();
+  renderChips();
+  initSlider(document.getElementById("sensSlider"), v => {
+    document.getElementById("sensVal").textContent = (0.5 + v * 2.5).toFixed(2);
+  });
+  document.querySelectorAll(".slider:not(#sensSlider)").forEach(s => initSlider(s));
+  paintWave(document.getElementById("pvWave"));
+  paintWave(document.getElementById("meetWave"));
+  fit();
+  window.addEventListener("resize", () => { fit();
+    paintWave(document.getElementById("pvWave")); paintWave(document.getElementById("meetWave")); });
+  runQueue();
+  setTimeout(() => {
+    document.getElementById("statusText").textContent = T("ui.statusReady");
+  }, 10);
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,8 @@
+numpy
+sounddevice
+soundfile
+pystray
+Pillow
+soundcard
+# Ventana del panel sin marco con WebView2 (pythonnet + clr-loader vienen con él)
+pywebview
