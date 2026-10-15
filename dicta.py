@@ -222,7 +222,12 @@ SCRIPT_DIR = data_dir()          # datos externos, junto a dicta.exe
 RESOURCE_DIR = resource_dir()    # recursos incluidos en el bundle
 CONFIG_FILE = os.path.join(SCRIPT_DIR, "dicta_config.json")
 LOG_FILE = os.path.join(SCRIPT_DIR, "dicta.log")
-APP_VERSION = "1.0"
+# VERSION UNICA de la app. Es el UNICO sitio donde se cambia la version: de
+# aqui sale `/state.version` (el panel la pinta como vX.Y.Z) y el log de
+# arranque. El comparador de actualizaciones tambien la usa. `APP_VERSION` se
+# conserva como alias por compatibilidad.
+VERSION = "1.0.2"
+APP_VERSION = VERSION
 WHISPER_EXE = os.path.join(RESOURCE_DIR, "whisper_bin", "Release", "whisper-cli.exe")
 # Motores GPU: cada backend vive en su carpeta con su whisper-server + DLLs.
 #   vulkan (AMD/Intel/NVIDIA) y cuda (NVIDIA). CPU usa whisper-cli.
@@ -309,6 +314,315 @@ def config_set(key, value):
             json.dump(d, f)
     except Exception:
         pass
+
+
+# ------------------------------------------ actualizacion desde la propia app
+# PROMESA DE PRODUCTO (NO NEGOCIABLE): dicta es 100 % local y NADA sale del
+# equipo. La UNICA excepcion posible es la COMPROBACION DE VERSION, y solo si
+# el usuario la activa a mano con el ajuste `check_updates` de
+# dicta_config.json, que viene APAGADO de fabrica. Con el ajuste activo, dicta
+# hace UNA peticion GET a la API PUBLICA de GitHub (releases/latest) del repo
+# de dicta. Esa peticion NO lleva ningun dato del usuario: ni identificadores,
+# ni telemetria, ni el estado de la app; lo unico que viaja es la propia URL
+# publica (un GET anonimo). Si el ajuste esta apagado, la funcion sale ANTES de
+# tocar la red: no se abre ninguna conexion.
+#
+# El estado de la ultima comprobacion se publica en `/state.update`:
+#   {available, latest, url, notes, checked_at, progress}
+# y se cambia con POST {"action":"check_update"} (comprueba, solo si esta
+# activo) y POST {"action":"update"} (descarga, verifica e instala el paquete
+# nuevo). El ajuste se enciende/apaga con
+# POST {"action":"check_updates","value":true|false}.
+UPDATE_REPO = "JDMoreu/dicta"
+UPDATE_API = f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest"
+UPDATE_UA = "dicta-update-check"     # GitHub exige un User-Agent en su API
+# Estado publicado en /state.update. 'enabled'/'error'/'applied' son extra (el
+# panel puede ignorarlos); los cinco de la especificacion estan siempre.
+UPDATE_STATE = {"available": False, "latest": "", "url": "", "notes": "",
+                "checked_at": "", "progress": 0,
+                "enabled": False, "error": "", "applied": "",
+                "asset_url": "", "asset_size": 0, "asset_sha256": "",
+                "staged_dir": ""}
+_UPDATE_LOCK = threading.Lock()
+
+
+def update_enabled():
+    """True solo si el autor activo la comprobacion (`check_updates`). De
+    fabrica, False: dicta nunca consulta la red."""
+    return bool(config_get("check_updates", False))
+
+
+def _version_tuple(value):
+    """('1.0.1') -> (1, 0, 1). Tolerante: 'v1.0', '1.0.1', '1' funcionan."""
+    parts = []
+    for chunk in str(value or "").strip().lstrip("vV").split("."):
+        digits = ""
+        for ch in chunk:
+            if ch.isdigit():
+                digits += ch
+            else:
+                break
+        parts.append(int(digits) if digits else 0)
+    while len(parts) < 3:
+        parts.append(0)
+    return tuple(parts[:3])
+
+
+def _pick_update_asset(assets):
+    """(url, size, sha256) del ZIP portable de la release, o ('',0,'')."""
+    best = None
+    for a in assets or []:
+        if not isinstance(a, dict):
+            continue
+        name = str(a.get("name") or "")
+        if not name.lower().endswith(".zip"):
+            continue
+        if "portable" in name.lower():
+            best = a
+            break
+        if best is None:
+            best = a
+    if not best:
+        return "", 0, ""
+    url = str(best.get("browser_download_url") or "")
+    try:
+        size = int(best.get("size") or 0)
+    except (TypeError, ValueError):
+        size = 0
+    digest = str(best.get("digest") or "")
+    sha = digest.split("sha256:")[-1].strip().lower() if "sha256" in digest \
+        else ""
+    return url, size, sha
+
+
+def _update_blank(reason="", enabled=None):
+    UPDATE_STATE.update({"available": False, "latest": "", "url": "",
+                         "notes": "", "checked_at": "", "progress": 0,
+                         "error": reason, "applied": "",
+                         "asset_url": "", "asset_size": 0,
+                         "asset_sha256": "", "staged_dir": ""})
+    if enabled is not None:
+        UPDATE_STATE["enabled"] = enabled
+    return dict(UPDATE_STATE)
+
+
+def check_update():
+    """Consulta la ultima release SOLO si `check_updates` esta activo.
+
+    Sin el ajuste NO toca la red: devuelve el estado con `enabled=False` y una
+    nota. Con el ajuste activo hace un GET anonimo a la API publica de GitHub y
+    rellena `available/latest/url/notes/checked_at`. Nunca envia datos.
+    """
+    if not update_enabled():
+        log("Actualizaciones: comprobacion desactivada; no se consulta la red.")
+        return _update_blank("", enabled=False)
+    _update_blank("", enabled=True)
+    import urllib.request
+    try:
+        req = urllib.request.Request(
+            UPDATE_API,
+            headers={"User-Agent": UPDATE_UA,
+                     "Accept": "application/vnd.github+json"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            data = json.loads(resp.read().decode("utf-8", "replace"))
+        tag = str(data.get("tag_name") or "").strip()
+        latest = tag.lstrip("vV")
+        url = str(data.get("html_url") or "")
+        notes = str(data.get("body") or "")
+        asset_url, asset_size, asset_sha = _pick_update_asset(
+            data.get("assets") or [])
+        available = _version_tuple(latest) > _version_tuple(VERSION)
+        UPDATE_STATE.update({
+            "enabled": True, "available": available, "latest": latest,
+            "url": url, "notes": notes,
+            "checked_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            "progress": 0, "error": "", "applied": "",
+            "asset_url": asset_url, "asset_size": asset_size,
+            "asset_sha256": asset_sha})
+        log(f"Actualizaciones: ultima {latest} "
+            f"({'hay version nueva' if available else 'ya al dia'}); "
+            f"consulta anonima, sin datos del usuario.")
+    except Exception as e:
+        UPDATE_STATE.update({"error": str(e),
+                             "checked_at": time.strftime("%Y-%m-%d %H:%M:%S")})
+        log(f"Actualizaciones: no se pudo comprobar la version ({e}).")
+    return dict(UPDATE_STATE)
+
+
+def _sha256_file(path, progress=None):
+    import hashlib
+    h = hashlib.sha256()
+    total = os.path.getsize(path)
+    done = 0
+    with open(path, "rb") as fh:
+        for block in iter(lambda: fh.read(1024 * 1024), b""):
+            h.update(block)
+            done += len(block)
+            if progress and total:
+                progress(done, total)
+    return h.hexdigest()
+
+
+def download_update():
+    """Descarga el paquete de la release y VERIFICA su integridad.
+
+    Devuelve (ruta_zip, staging_dir) tras comprobar tamano y -- si la release
+    publica sha256 en su digest -- el hash. Lanza excepcion si algo no cuadra.
+    """
+    import urllib.request
+    asset_url = UPDATE_STATE.get("asset_url") or ""
+    if not asset_url:
+        raise RuntimeError("no hay paquete de release (haz una comprobacion)")
+    size_expected = int(UPDATE_STATE.get("asset_size") or 0)
+    sha_expected = str(UPDATE_STATE.get("asset_sha256") or "").lower()
+    tmp = os.path.join(SCRIPT_DIR, ".tmp", "update")
+    os.makedirs(tmp, exist_ok=True)
+    zip_path = os.path.join(tmp, os.path.basename(asset_url) or "dicta-update.zip")
+    part = zip_path + ".part"
+    log(f"Actualizaciones: descargando {os.path.basename(zip_path)}"
+        f"{f' ({size_expected} B)' if size_expected else ''} ...")
+    req = urllib.request.Request(asset_url, headers={"User-Agent": UPDATE_UA})
+    with urllib.request.urlopen(req, timeout=30) as resp, \
+            open(part, "wb") as out:
+        total = int(resp.headers.get("Content-Length") or size_expected or 0)
+        done = 0
+        while True:
+            block = resp.read(1024 * 1024)
+            if not block:
+                break
+            out.write(block)
+            done += len(block)
+            if total:
+                with _UPDATE_LOCK:
+                    UPDATE_STATE["progress"] = int(done * 90 / total)
+    if size_expected and os.path.getsize(part) != size_expected:
+        raise RuntimeError("el tamano descargado no cuadra "
+                           f"({os.path.getsize(part)} != {size_expected})")
+    os.replace(part, zip_path)
+    if sha_expected:
+        got = _sha256_file(zip_path)
+        if got != sha_expected:
+            raise RuntimeError("sha256 no cuadra "
+                               f"({got[:12]}... != {sha_expected[:12]}...)")
+        log(f"Actualizaciones: sha256 verificado ({got[:16]}...).")
+    else:
+        log("Actualizaciones: la release no publica sha256; verificado el tamano.")
+    return zip_path, tmp
+
+
+def prepare_update(zip_path, tmp):
+    """Extrae el paquete y deja listo el ayudante que sustituye los ficheros.
+
+    El ayudante (`apply_update.cmd`) ESPERA a que esta app se cierre (no se
+    puede reemplazar un .exe en caliente), copia el paquete sobre la carpeta de
+    la app y la vuelve a arrancar. Devuelve la ruta del ayudante.
+    """
+    import zipfile
+    staging = os.path.join(tmp, "new")
+    if os.path.isdir(staging):
+        shutil.rmtree(staging, ignore_errors=True)
+    os.makedirs(staging, exist_ok=True)
+    with zipfile.ZipFile(zip_path) as zf:
+        bad = zf.testzip()
+        if bad:
+            raise RuntimeError(f"ZIP corrupto en {bad}")
+        zf.extractall(staging)
+    with _UPDATE_LOCK:
+        UPDATE_STATE["staged_dir"] = staging
+        UPDATE_STATE["progress"] = 95
+    # Carpeta a sustituir y ejecutable de arranque.
+    dest = SCRIPT_DIR
+    exe = os.path.join(dest, "dicta.exe")
+    frozen = _frozen()
+    helper = os.path.join(tmp, "apply_update.cmd")
+    lines = [
+        "@echo off",
+        "rem Ayudante de actualizacion de dicta (generado por la app).",
+        "rem Espera a que la app se cierre, sustituye los ficheros y la",
+        "rem vuelve a arrancar. Se autoborra al terminar.",
+        "setlocal",
+        f'set "SRC={staging}"',
+        f'set "DST={dest}"',
+        f'set "EXE={exe}"',
+        f'set "PID={os.getpid()}"',
+        ":wait",
+        'tasklist /FI "PID eq %PID%" /NH 2>nul | findstr /C:"%PID%" >nul',
+        "if not errorlevel 1 (",
+        "  timeout /t 1 /nobreak >nul",
+        "  goto wait",
+        ")",
+        'robocopy "%SRC%" "%DST%" /E /NFL /NDL /NJH /NJS /NP >nul',
+        f'start "" "%EXE%"',
+        f'rd /s /q "{tmp}"',
+        "exit /b 0",
+    ]
+    with open(helper, "w", encoding="ascii", newline="\r\n") as fh:
+        fh.write("\n".join(lines) + "\n")
+    with _UPDATE_LOCK:
+        UPDATE_STATE["helper"] = helper
+        UPDATE_STATE["portable"] = frozen
+    return helper
+
+
+def apply_update(launch=True):
+    """Descarga, verifica y aplica la actualizacion.
+
+    Solo si `check_updates` esta activo y hay una version nueva. En modo
+    PORTABLE (exe congelado) lanza el ayudante y cierra la app para que la
+    sustitucion ocurra en frio. En modo FUENTE (dicta.py) no puede sustituirse
+    en marcha: deja el paquete verificado en `.tmp/update/new` y lo indica.
+    """
+    if not update_enabled():
+        return {"ok": False, "error": "comprobacion desactivada"}
+    if not UPDATE_STATE.get("available"):
+        return {"ok": False, "error": "no hay version nueva (comprueba antes)"}
+    try:
+        zip_path, tmp = download_update()
+        helper = prepare_update(zip_path, tmp)
+    except Exception as e:
+        with _UPDATE_LOCK:
+            UPDATE_STATE["progress"] = 0
+            UPDATE_STATE["error"] = str(e)
+        log(f"Actualizaciones: fallo al preparar la actualizacion ({e}).")
+        return {"ok": False, "error": str(e)}
+    with _UPDATE_LOCK:
+        UPDATE_STATE["progress"] = 100
+    frozen = bool(UPDATE_STATE.get("portable"))
+    if not frozen:
+        # Modo fuente: no se puede reemplazar el codigo en marcha. Se deja
+        # descargado y verificado, y se explica el limite.
+        with _UPDATE_LOCK:
+            UPDATE_STATE["applied"] = "descargado (modo fuente)"
+        log("Actualizaciones: paquete descargado y verificado en "
+            f"{UPDATE_STATE.get('staged_dir')}. En modo fuente no se aplica "
+            "en caliente: usa el paquete portable.")
+        return {"ok": True, "staged": UPDATE_STATE.get("staged_dir"),
+                "applied": False, "helper": helper}
+    # Modo portable: lanzar el ayudante (desacoplado) y cerrar la app.
+    flags = 0x00000008 | 0x00000200      # DETACHED_PROCESS|CREATE_NEW_PROCESS_GROUP
+    try:
+        subprocess.Popen(["cmd", "/c", helper],
+                         creationflags=flags, close_fds=True,
+                         cwd=tmp)
+    except Exception as e:
+        with _UPDATE_LOCK:
+            UPDATE_STATE["error"] = str(e)
+        return {"ok": False, "error": str(e)}
+    with _UPDATE_LOCK:
+        UPDATE_STATE["applied"] = "reiniciando"
+    log("Actualizaciones: ayudante lanzado; la app se cerrara para aplicar.")
+    if launch:
+        def _quit_soon():
+            time.sleep(1.2)              # dar tiempo a responder el POST
+            try:
+                if _control_ref is not None:
+                    _control_ref.post_action("quit", None)   # cierre limpio (VRAM)
+                else:
+                    os._exit(0)
+            except Exception:
+                os._exit(0)
+        threading.Thread(target=_quit_soon, daemon=True).start()
+    return {"ok": True, "applied": True, "helper": helper}
 
 
 # ------------------------------------------------------------------- ASR
@@ -942,6 +1256,7 @@ try { $target.SetFocus() } catch {}
 
 
 _panel_host = None      # lo publica Overlay.__init__: lo usa el carril de entrega
+_control_ref = None     # lo publica Overlay.__init__: lo usa la actualizacion
 _ultimo_destino = 0     # última ventana NO de dicta que tuvo el foco
 _ultimo_destino_titulo = ""
 
@@ -1174,7 +1489,7 @@ def start_delivery(text: str, target_hwnd=0, target_title="") -> None:
             "elevado: el Ctrl+V no va a llegar. Arranca dicta como "
             "administrador (run.bat).")
     same = (not target_hwnd) or (foreground == target_hwnd)
-    if same and fallback_paste(target_hwnd):
+    if same and fallback_paste(target_hwnd, text):
         log(f"Pegado inmediato en {(time.monotonic() - t0) * 1000:.0f} ms.")
         app.delivery_results.put((True, "", target_hwnd))
         return
@@ -1182,7 +1497,7 @@ def start_delivery(text: str, target_hwnd=0, target_title="") -> None:
         try:
             if _forzar_primer_plano(target_hwnd):
                 time.sleep(0.12)
-                if fallback_paste(target_hwnd):
+                if fallback_paste(target_hwnd, text):
                     log(f"Pegado tras restaurar foco en "
                         f"{(time.monotonic() - t0) * 1000:.0f} ms.")
                     app.delivery_results.put((True, "", target_hwnd))
@@ -1203,20 +1518,31 @@ def start_delivery(text: str, target_hwnd=0, target_title="") -> None:
 
 
 # ---------------------------------------------- pegado segun la ventana
-# En una terminal, Ctrl+V NO pega: el emulador se queda la combinacion (la usa
-# para el modo literal del shell, etc.), asi que el texto no llega y el autor
-# tiene que pulsar Ctrl+Shift+V a mano. La combinacion correcta depende del
-# EMULADOR, no del programa que corre dentro, asi que hay que mirar la ventana
-# destino ANTES de enviar nada:
-#   Windows Terminal (CASCADIA_HOSTING_WINDOW_CLASS) -> Ctrl+Shift+V
-#   conhost clasico (ConsoleWindowClass)             -> Ctrl+V (ya pega)
-#   VS Code / JetBrains / mintty / WezTerm / ...     -> Ctrl+Shift+V
-#   aplicaciones normales                            -> Ctrl+V (como siempre)
-# Respaldo universal cuando algo no encaja o el envio falla: Shift+Insert.
+# Pegar NO es lo mismo en todos los sitios, y elegir MAL el carril era lo que
+# hacia que el texto no llegara. Hay que mirar la ventana destino ANTES de
+# enviar nada:
+#   conhost clasico (ConsoleWindowClass) -> se escribe en el BUFFER DE ENTRADA
+#       de la consola (WriteConsoleInputW): es lo que lee un programa en modo
+#       crudo (una TUI) y NO necesita el primer plano. Respaldo: Ctrl+V (en
+#       conhost tambien pega).
+#   ventana Chromium/Electron (Chrome_WidgetWin_1 + _CHROMIUM_HOST_EXES) ->
+#       texto TECLEADO como entrada real: dentro de Chromium el pegado depende
+#       del control que tenga el foco (un xterm.js pega con Ctrl+Shift+V, un
+#       <textarea> con Ctrl+V) y desde fuera no se puede adivinar.
+#   ventana Tauri/WebView2 (clase "Tauri Window", p. ej. Terax) -> tambien
+#       texto TECLEADO: su terminal (xterm.js sobre canvas) no recibe ni Ctrl+V
+#       ni Ctrl+Shift+V (medido), pero el tecleado como entrada real si llega.
+#   Windows Terminal / VS Code / JetBrains / mintty / WezTerm / ... ->
+#       Ctrl+Shift+V (su combinacion de pegado).
+#   aplicaciones normales -> Ctrl+V (como siempre).
+# Respaldo universal si algo no encaja o el envio falla: Shift+Insert, y como
+# ultimo recurso los mensajes POSTEADOS (WM_PASTE + Ctrl+V).
 
 _VK_SHIFT, _VK_INSERT = 0x10, 0x2D
 # Valores aceptados por la opcion configurable `paste_mode` (`auto` = detectar).
-PASTE_MODES = ("auto", "ctrl+v", "ctrl+shift+v", "shift+insert")
+# `type` fuerza el TEXTO TECLEADO como entrada real (el mecanismo que ya se usa
+# en ventanas Chromium/Electron y ahora tambien en las Tauri, como Terax).
+PASTE_MODES = ("auto", "ctrl+v", "ctrl+shift+v", "shift+insert", "type")
 
 # Clases de ventana que son emuladores de terminal (Ctrl+V no pega ahi).
 # conhost va aparte: es el unico emulador donde Ctrl+V SI pega de fabrica.
@@ -1249,6 +1575,26 @@ _TERMINAL_EXES = {
     "conemu64.exe", "conemu.exe", "tabby.exe", "hyper.exe", "kitty.exe",
     "ghostty.exe", "rio.exe", "mobaxterm.exe", "putty.exe",
     "fluentterminal.app.exe", "terminus.exe", "warp.exe",
+}
+
+# Ventanas Chromium/Electron que ALOJAN la terminal o el campo del agente
+# (Hermes y OpenCode son Electron con terminal integrada tipo xterm.js). La
+# clase es la misma que la de un navegador, asi que se mira el .exe. Ahi la
+# combinacion de pegado depende del control con el foco y no se adivina
+# desde fuera: se TECLEA el texto como entrada real.
+_CHROMIUM_HOST_EXES = {
+    "hermes.exe", "opencode.exe", "cursor.exe", "windsurf.exe",
+    "claude.exe", "codex.exe", "kiro.exe", "zed.exe",
+}
+
+# Ventanas Tauri 2 / WebView2 que alojan una terminal emulada en un canvas
+# (Terax y en general cualquier "ADE" Tauri). Comparten la clase generica
+# "Tauri Window" (no la de Chromium) y su pegado por combinacion NO funciona:
+# medido en Terax, Ctrl+V y Ctrl+Shift+V no meten nada en el PTY. Ahi se
+# TECLEA el texto como entrada real, igual que en las ventanas Chromium.
+_TAURI_CLASSES = {"tauri window", "tao thread event target"}
+_TAURI_HOST_EXES = {
+    "terax.exe",
 }
 
 
@@ -1303,13 +1649,26 @@ def _clasificar_destino(hwnd):
     quien = f"{clase or '?'} / {exe or '?'}"
     lc = clase.lower()
     if lc in _CONHOST_CLASSES:
-        # Consola clasica: Ctrl+V ya pega (y Shift+Insert tambien).
-        return "console", quien, "ctrl+v"
+        # Consola clasica: el texto entra por el BUFFER DE ENTRADA de la
+        # consola (WriteConsoleInputW), que es lo que lee un programa en
+        # modo crudo (una TUI). Ctrl+V tambien pega aqui, asi que sirve de
+        # respaldo si la consola no se deja adjuntar.
+        return "console", quien, "console"
     nombre = _TERMINAL_CLASSES.get(lc)
     if nombre:
         return "terminal", f"{nombre} [{quien}]", "ctrl+shift+v"
     if exe in _TERMINAL_EXES:
         return "terminal", f"{exe} [{quien}]", "ctrl+shift+v"
+    if lc == "chrome_widgetwin_1" and exe in _CHROMIUM_HOST_EXES:
+        # Chromium/Electron (Hermes, OpenCode, Cursor...): la terminal vive
+        # DENTRO de la ventana, comparte clase con los navegadores y pegar
+        # depende del control con el foco. Se teclea como entrada real.
+        return "chromium", f"{exe} [{quien}]", "type"
+    if lc in _TAURI_CLASSES or exe in _TAURI_HOST_EXES:
+        # Tauri/WebView2 (Terax): la terminal es un xterm.js sobre canvas dentro
+        # del WebView2 y ni Ctrl+V ni Ctrl+Shift+V llegan al PTY (medido). Se
+        # teclea el texto como entrada real, que si llega completo.
+        return "tauri", f"{exe} [{quien}]", "type"
     if not clase and not exe:
         # No se pudo averiguar NADA de la ventana: pegado mas universal posible.
         return "unknown", quien, "shift+insert"
@@ -1317,17 +1676,18 @@ def _clasificar_destino(hwnd):
 
 
 def _paste_mode(hwnd):
-    """(modo, etiqueta) de la combinacion a enviar, respetando el forzado.
+    """(mecanismo, etiqueta) de entrega, respetando el forzado por config.
 
-    `paste_mode` de dicta_config.json manda si no es `auto`: es la valvula para
-    una terminal concreta que se resista a la deteccion.
+    El mecanismo sale de `_clasificar_destino` (`console` -> buffer de la
+    consola, `type` -> texto tecleado, o una combinacion de teclas).
+    `paste_mode` de dicta_config.json manda si no es `auto` y entonces SE
+    FUERZA la combinacion: es la valvula para una ventana que se resista.
     """
+    tipo, quien, mecanismo = _clasificar_destino(hwnd)
     forzado = str(getattr(app, "paste_mode", "auto") or "auto").strip().lower()
-    if forzado in ("ctrl+v", "ctrl+shift+v", "shift+insert"):
-        tipo, quien, _ = _clasificar_destino(hwnd)
+    if forzado in ("ctrl+v", "ctrl+shift+v", "shift+insert", "type"):
         return forzado, f"forzado por config ({tipo}: {quien})"
-    tipo, quien, combo = _clasificar_destino(hwnd)
-    return combo, f"{tipo}: {quien}"
+    return mecanismo, f"{tipo}: {quien}"
 
 
 def _send_combo(mode: str) -> None:
@@ -1353,13 +1713,183 @@ def _send_combo(mode: str) -> None:
         raise ValueError(f"modo de pegado desconocido: {mode}")
 
 
-def fallback_paste(target_hwnd=0) -> bool:
-    """Pega desde el portapapeles con la combinacion que acepte la ventana.
+# ------------------------------------------ entrega segun el destino
+# Pegar NO es la misma operacion en todos los sitios, y elegir MAL la
+# combinacion era justo lo que hacia que no llegara nada:
+#   * consola real (conhost) -> el texto se escribe en el BUFFER DE ENTRADA de
+#       la consola (WriteConsoleInputW): es lo que recibe un programa que lee el
+#       teclado en crudo (una TUI). No depende del primer plano ni de la
+#       combinacion de pegado del emulador.
+#   * ventana Chromium/Electron (Hermes, OpenCode...): la terminal o el campo
+#       viven DENTRO de la ventana y comparten clase con los navegadores. Ahi
+#       Ctrl+V y Ctrl+Shift+V dependen del control con el foco (un xterm.js pega
+#       con Ctrl+Shift+V, un <textarea> con Ctrl+V) y desde fuera no se puede
+#       adivinar: se TECLEA el texto como entrada real.
+#   * emulador de terminal -> Ctrl+Shift+V (su combinacion de pegado).
+#   * aplicacion normal     -> Ctrl+V, como siempre.
+# Ultimo recurso si el envio falla: mensajes POSTEADOS (WM_PASTE / Ctrl+V).
 
-    En aplicaciones normales es Ctrl+V, como siempre. En una terminal el
-    emulador se queda Ctrl+V, asi que se manda Ctrl+Shift+V. Si el envio falla
-    o no se reconoce la ventana, se recurre a Shift+Insert, que es el pegado
-    que mas terminales cubren. Devuelve True si envio las teclas.
+_KEYEVENTF_UNICODE = 0x0004
+_WM_PASTE = 0x0302
+_console_lock = threading.Lock()
+_console_api_ready = False
+# ---------------------------------------------- pegado segun la ventana (2)
+#   * ventana Tauri / WebView2 (clase "Tauri Window", p. ej. Terax) -> la
+#       terminal vive DENTRO de un WebView2 (xterm.js sobre canvas) y su pegado
+#       por combinacion NO es fiable: medido en Terax, ni Ctrl+V ni Ctrl+Shift+V
+#       meten nada en el PTY. Se TECLEA el texto como entrada real, que es lo
+#       que si llega (y respeta espacios).
+
+
+class _KEY_EVENT_RECORD(ctypes.Structure):
+    _fields_ = [("bKeyDown", wintypes.BOOL),
+                ("wRepeatCount", wintypes.WORD),
+                ("wVirtualKeyCode", wintypes.WORD),
+                ("wVirtualScanCode", wintypes.WORD),
+                ("uChar", ctypes.c_wchar),
+                ("dwControlKeyState", wintypes.DWORD)]
+
+
+class _INPUT_RECORD_EV(ctypes.Union):
+    _fields_ = [("KeyEvent", _KEY_EVENT_RECORD),
+                ("_pad", ctypes.c_byte * 16)]
+
+
+class _INPUT_RECORD(ctypes.Structure):
+    _fields_ = [("EventType", wintypes.WORD), ("Event", _INPUT_RECORD_EV)]
+
+
+def _utf16_units(ch: str):
+    """Unidades UTF-16 de un caracter (fuera del BMP van en pareja)."""
+    c = ord(ch)
+    if c <= 0xFFFF:
+        return (c,)
+    c -= 0x10000
+    return (0xD800 + (c >> 10), 0xDC00 + (c & 0x3FF))
+
+
+def _type_text(text: str) -> bool:
+    """Teclea el texto con entrada REAL (SendInput, KEYEVENTF_UNICODE).
+
+    Es el mecanismo para ventanas Chromium/Electron: lo ve cualquier control que
+    tenga el foco, sea un terminal integrado (xterm.js) o un campo de texto, sin
+    depender de que combinacion tenga atada al pegado.
+    """
+    if not text:
+        return False
+    for ch in text:
+        for unit in _utf16_units(ch):
+            _send_key_event(vk=0, scan=unit, flags=_KEYEVENTF_UNICODE)
+            _send_key_event(vk=0, scan=unit, flags=_KEYEVENTF_UNICODE | 2)
+    return True
+
+
+def _console_api() -> None:
+    global _console_api_ready
+    if _console_api_ready:
+        return
+    k = _kernel32
+    k.FreeConsole.restype = wintypes.BOOL
+    k.AttachConsole.argtypes = (wintypes.DWORD,)
+    k.AttachConsole.restype = wintypes.BOOL
+    k.CreateFileW.argtypes = (ctypes.c_wchar_p, wintypes.DWORD, wintypes.DWORD,
+                              ctypes.c_void_p, wintypes.DWORD, wintypes.DWORD,
+                              ctypes.c_void_p)
+    k.CreateFileW.restype = ctypes.c_void_p
+    k.WriteConsoleInputW.argtypes = (ctypes.c_void_p,
+                                     ctypes.POINTER(_INPUT_RECORD),
+                                     wintypes.DWORD,
+                                     ctypes.POINTER(wintypes.DWORD))
+    k.WriteConsoleInputW.restype = wintypes.BOOL
+    k.CloseHandle.argtypes = (ctypes.c_void_p,)
+    _console_api_ready = True
+
+
+def _console_inject(hwnd, text) -> bool:
+    """Escribe el texto en el BUFFER DE ENTRADA de la consola de `hwnd`.
+
+    Solo vale para consolas REALES (conhost). En ConPTY (Windows Terminal) el
+    AttachConsole da ACCESS_DENIED y se devuelve False para caer al teclado. La
+    consola del proceso es unica, asi que va bajo un lock y se suelta enseguida.
+    """
+    pid = _win_pid(hwnd)
+    if not pid or not text:
+        return False
+    _console_api()
+    k = _kernel32
+    GENERIC_READ, GENERIC_WRITE = 0x80000000, 0x40000000
+    with _console_lock:
+        try:
+            k.FreeConsole()
+            if not k.AttachConsole(int(pid)):
+                return False
+        except Exception:
+            return False
+        try:
+            h = k.CreateFileW("CONIN$", GENERIC_READ | GENERIC_WRITE, 3,
+                              None, 3, 0, None)
+            if not h or h == ctypes.c_void_p(-1).value:
+                return False
+            ok = False
+            try:
+                recs = []
+                for ch in text:
+                    down = _INPUT_RECORD()
+                    down.EventType = 1
+                    down.Event.KeyEvent.bKeyDown = True
+                    down.Event.KeyEvent.wRepeatCount = 1
+                    down.Event.KeyEvent.uChar = ch
+                    recs.append(down)
+                    up = _INPUT_RECORD()
+                    up.EventType = 1
+                    up.Event.KeyEvent.bKeyDown = False
+                    up.Event.KeyEvent.wRepeatCount = 1
+                    up.Event.KeyEvent.uChar = ch
+                    recs.append(up)
+                arr = (_INPUT_RECORD * len(recs))(*recs)
+                written = wintypes.DWORD(0)
+                ok = bool(k.WriteConsoleInputW(ctypes.c_void_p(h), arr,
+                                               len(recs),
+                                               ctypes.byref(written)))
+            finally:
+                k.CloseHandle(ctypes.c_void_p(h))
+            return ok
+        except Exception:
+            return False
+        finally:
+            try:
+                k.FreeConsole()
+            except Exception:
+                pass
+
+
+def _post_paste(hwnd) -> bool:
+    """Ultimo recurso: mensajes POSTEADOS a la ventana (WM_PASTE y Ctrl+V).
+
+    Chromium/Electron no los ven, pero hay controles clasicos que solo atienden
+    este carril; se usa cuando el envio de teclas ha fallado del todo.
+    """
+    if not hwnd:
+        return False
+    try:
+        _user32.PostMessageW(hwnd, _WM_PASTE, 0, 0)
+        _user32.PostMessageW(hwnd, 0x0100, _VK_CTRL, 0)      # WM_KEYDOWN ctrl
+        _user32.PostMessageW(hwnd, 0x0100, _VK_V, 0)
+        _user32.PostMessageW(hwnd, 0x0101, _VK_V, 0)         # WM_KEYUP v
+        _user32.PostMessageW(hwnd, 0x0101, _VK_CTRL, 0)
+        return True
+    except Exception:
+        return False
+
+
+def fallback_paste(target_hwnd=0, text="") -> bool:
+    """Entrega `text` al destino con el mecanismo que le corresponde.
+
+    El mecanismo lo elige `_paste_mode` por tipo de ventana (ver el bloque de
+    arriba): buffer de la consola para conhost, texto tecleado como entrada real
+    para ventanas Chromium/Electron, Ctrl+Shift+V para emuladores de terminal y
+    Ctrl+V para aplicaciones normales. Si el carril falla, se cae al teclado (y
+    al final a los mensajes posteados). Devuelve True si envio el texto.
     """
     try:
         if target_hwnd and _user32.GetForegroundWindow() != target_hwnd:
@@ -1367,6 +1897,19 @@ def fallback_paste(target_hwnd=0) -> bool:
             time.sleep(0.12)
         hwnd = target_hwnd or _user32.GetForegroundWindow()
         modo, etiqueta = _paste_mode(hwnd)
+        if modo == "type":
+            if _type_text(text):
+                log(f"Pegado (texto tecleado) enviado a [{etiqueta}].")
+                return True
+            log(f"El tecleado no salio en [{etiqueta}]; pruebo Ctrl+V.")
+            modo = "ctrl+v"
+        elif modo == "console":
+            if _console_inject(hwnd, text):
+                log(f"Pegado (buffer de consola) enviado a [{etiqueta}].")
+                return True
+            log(f"No se pudo escribir en el buffer de [{etiqueta}] "
+                "(ConPTY o consola inaccesible); pruebo el teclado.")
+            modo = "ctrl+v"
         try:
             _send_combo(modo)
         except Exception as e:
@@ -1381,6 +1924,12 @@ def fallback_paste(target_hwnd=0) -> bool:
         return True
     except Exception as e:
         log(f"Pegado automatico bloqueado ({e}); pulsa el pegado a mano.")
+        try:
+            if target_hwnd and _post_paste(target_hwnd):
+                log("Pegado posteado (WM_PASTE) enviado al destino.")
+                return True
+        except Exception:
+            pass
         return False
 
 
@@ -3177,6 +3726,45 @@ class ControlServer:
                     self._send(400, b'{"error":"bad json"}')
                     return
                 action = msg.get("action")
+                if action == "check_update":
+                    # Comprueba si hay version nueva. SOLO si el ajuste
+                    # `check_updates` esta activo; si no, NO toca la red.
+                    try:
+                        result = check_update()
+                        self._send(200, json.dumps(
+                            {"ok": bool(result.get("enabled")),
+                             "update": result}).encode("utf-8"))
+                    except Exception as e:
+                        self._send(500, json.dumps(
+                            {"error": str(e)}).encode("utf-8"))
+                    return
+                if action == "update":
+                    # Descarga, verifica e instala el paquete de la release.
+                    # El trabajo pesado va en un hilo: responde ya y el avance
+                    # se sigue por /state.update.progress.
+                    try:
+                        if not update_enabled():
+                            self._send(200, json.dumps(
+                                {"ok": False,
+                                 "error": "comprobacion desactivada",
+                                 "update": dict(UPDATE_STATE)}).encode("utf-8"))
+                            return
+                        if not UPDATE_STATE.get("available"):
+                            self._send(200, json.dumps(
+                                {"ok": False,
+                                 "error": "no hay version nueva (comprueba antes)",
+                                 "update": dict(UPDATE_STATE)}).encode("utf-8"))
+                            return
+                        threading.Thread(target=apply_update,
+                                         kwargs={"launch": True},
+                                         daemon=True).start()
+                        self._send(202, json.dumps(
+                            {"ok": True, "started": True,
+                             "update": dict(UPDATE_STATE)}).encode("utf-8"))
+                    except Exception as e:
+                        self._send(500, json.dumps(
+                            {"error": str(e)}).encode("utf-8"))
+                    return
                 if action == "upload.remove":
                     # Quita una subida de la lista y borra su fichero del disco.
                     try:
@@ -4900,7 +5488,8 @@ def service_app(mic: Mic, mode: str):
         else:
             if detail:
                 log(f"UI Automation no disponible: {detail}")
-            if fallback_paste(target_hwnd):
+            texto = getattr(app, "current_transcript", "") or ""
+            if fallback_paste(target_hwnd, texto):
                 app.dismiss_overlay = True  # pegado manual/enviado: se va igual
         app.state = "idle"
 
@@ -4940,8 +5529,9 @@ class Overlay:
         # Se publica para el carril de entrega (no pegar nunca dentro del
         # panel): el Overlay es local de main() y desde una función de módulo
         # no se alcanza.
-        global _panel_host
+        global _panel_host, _control_ref
         _panel_host = self.panel
+        _control_ref = self.control          # lo usa apply_update() para cerrar
         atexit.register(self.panel.close)
 
     # ---- configuración (mismos setters que antes)
@@ -4989,9 +5579,10 @@ class Overlay:
         """Fuerza (o deja en auto) la combinacion del pegado automatico.
 
         `auto` detecta la ventana destino en cada pegado; `ctrl+v`,
-        `ctrl+shift+v` y `shift+insert` la fuerzan: es la valvula de escape para
-        una terminal que se resista a la deteccion. Persiste en dicta_config.json
-        y se publica en /state.
+        `ctrl+shift+v`, `shift+insert` y `type` la fuerzan: es la valvula de
+        escape para una terminal que se resista a la deteccion (`type` teclea el
+        texto como entrada real, sin depender de la combinacion ni del
+        portapapeles). Persiste en dicta_config.json y se publica en /state.
         """
         v = str(value or "auto").strip().lower()
         if v not in PASTE_MODES:
@@ -5001,6 +5592,25 @@ class Overlay:
         config_set("paste_mode", v)
         log(f"Modo de pegado forzado: {v}")
         return {"ok": True, "paste_mode": v}
+
+    def on_check_updates(self, value):
+        """Enciende/apaga la comprobacion de version (ajuste `check_updates`).
+
+        APAGADA de fabrica: mientras lo este, dicta NO consulta la red. Al
+        activarla se lanza una comprobacion en segundo plano (para no bloquear
+        el hilo HTTP) y el resultado se sigue en /state.update. Al apagarla se
+        limpia el estado y se deja de tocar la red.
+        """
+        enabled = bool(value) if not isinstance(value, str) \
+            else value.strip().lower() in ("1", "true", "on", "si", "sí", "yes")
+        config_set("check_updates", enabled)
+        log(f"Comprobacion de actualizaciones: {'activada' if enabled else 'desactivada'}")
+        if enabled:
+            threading.Thread(target=check_update, daemon=True).start()
+        else:
+            _update_blank("", enabled=False)
+        return {"ok": True, "check_updates": enabled,
+                "update": dict(UPDATE_STATE)}
 
     def on_theme(self, name):
         app.theme = "light" if name == "light" else "dark"
@@ -5257,6 +5867,10 @@ class Overlay:
                 "voice_threshold": round(float(app.voice_threshold), 6),
                 "silence_wait": round(float(app.silence_wait), 3),
                 "paste_mode": str(getattr(app, "paste_mode", "auto")),
+                # Valores validos de paste_mode (documentado en /state): auto
+                # detecta; ctrl+v / ctrl+shift+v / shift+insert fuerzan la
+                # combinacion; type TECLEA el texto como entrada real.
+                "paste_modes": list(PASTE_MODES),
                 "rms": round(float(getattr(app, "rms", 0.0)), 6),
                 "thr": round(float(getattr(app, "thr", 0.0)), 6),
                 "voice": bool(getattr(app, "rms", 0.0) >
@@ -5280,7 +5894,11 @@ class Overlay:
                 "mic_test": _mictest.snapshot(),
                 "meeting_mic": bool(config_get("meeting_mic", True)),
                 "status": status, "status_kind": kind, "st": st,
-                "version": APP_VERSION,
+                "version": VERSION,
+                # Actualizacion desde la app: la comprobacion esta APAGADA de
+                # fabrica (`check_updates`). Si lo esta, `enabled` es False y
+                # no se ha consultado nada a la red; `progress` es 0..100.
+                "update": dict(UPDATE_STATE),
                 "queue": _audio_queue.snapshot(),
                 "uploads": _uploads.snapshot(),
                 "meeting": _meeting.snapshot(),
@@ -5352,6 +5970,16 @@ class Overlay:
                     return reply.get(timeout=5.0)
                 except queue.Empty:
                     return {"ok": False, "error": "timeout"}
+        if action == "check_updates":
+            # Interruptor del panel: enciende/apaga la comprobacion de version
+            # (ajuste `check_updates`, APAGADO de fabrica). Al activarlo se
+            # lanza una comprobacion en segundo plano; al apagarlo, dicta deja
+            # de tocar la red y limpia el estado.
+            return self.on_check_updates(value)
+        if action == "check_update":
+            # Boton "Comprobar ahora" del panel (equivale al POST de nivel
+            # superior): comprueba SOLO si el ajuste esta activo.
+            return {"ok": True, "update": check_update()}
         if action == "paste_mode":
             # POST {action:"paste_mode", value:"auto|ctrl+v|ctrl+shift+v|
             # shift+insert"}: fuerza la combinacion del pegado automatico para
@@ -5744,7 +6372,10 @@ def main():
         for _k, _v in (("voice_threshold", app.voice_threshold),
                        ("silence_wait", app.silence_wait),
                        ("paste_mode", getattr(app, "paste_mode", "auto")),
-                       ("meeting_stop_key", app.meeting_stop_key_label)):
+                       ("meeting_stop_key", app.meeting_stop_key_label),
+                       # Comprobacion de version: APAGADA de fabrica (nada
+                       # sale del equipo salvo que el autor la active).
+                       ("check_updates", bool(config_get("check_updates", False)))):
             if _k not in _cfg_disk:
                 config_set(_k, _v)
         elevado = _esta_elevado()

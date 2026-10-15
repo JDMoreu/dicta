@@ -1,6 +1,6 @@
 /* dicta — panel de ajustes.
    Sistema visual del prediseño (assets/prediseno/*): superficie SÓLIDA y sin
-   bordes —la forma se delimita con LUZ—, raíl de 7 secciones, filas de ajuste
+   bordes —la forma se delimita con LUZ—, raíl de 6 secciones, filas de ajuste
    agrupadas (azulejo + título + ayuda + control), 6 pasos tipográficos,
    4 duraciones y 3 curvas. HTML/CSS/JS puro: sin red, sin frameworks. */
 
@@ -710,6 +710,33 @@ kbd.capturing { box-shadow: 0 0 0 2px var(--accent), inset 0 -2px 0 var(--line);
 /* la barra de avance ocupa el raíl entero, nunca un ancho fijo */
 .u-prog { display: flex; align-items: center; width: 100%; min-width: 0; }
 .u-prog .q-bar { flex: 1 1 auto; width: auto; }
+
+/* ---------- franja de actualizaciones: pie, junto a la versión ----------
+   UNA sola línea (versión + estado real + progreso + acción + interruptor),
+   discreta y sin desbordar el pie: el estado se recorta antes que empujar, y
+   el progreso solo ocupa un tramo. Los tres estados tienen su color; «apagada»
+   y «comprobando» se quedan neutros. */
+.upd { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; flex: 0 1 auto; }
+.upd-state {
+  display: inline-flex; align-items: center;
+  min-width: 0; max-width: 42ch; padding: 2px var(--sp-2);
+  border-radius: var(--r-pill); background: var(--surface-2);
+  color: var(--text-2); box-shadow: var(--edge);
+  font-size: var(--fs-micro); font-weight: 500;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.upd-state[data-state="ok"]   { background: var(--ok-sf);     color: var(--ok);     box-shadow: none; }
+.upd-state[data-state="new"]  { background: var(--accent-sf); color: var(--accent); box-shadow: none; }
+.upd-state[data-state="run"]  { background: var(--accent-sf); color: var(--accent); box-shadow: none; }
+.upd-state[data-state="pend"] { background: var(--warn-sf);   color: var(--warn);   box-shadow: none; }
+.upd-state[data-state="err"]  { background: var(--err-sf);    color: var(--err);    box-shadow: none; }
+.upd-prog { flex: 0 1 120px; min-width: 56px; width: auto; padding: 0; }
+.upd-prog .q-bar { width: 100%; }
+.upd-go { flex: 0 0 auto; }
+/* interruptor pequeño: la franja del pie es discreta, no un control grande */
+.switch-sm { width: 34px; height: 19px; }
+.switch-sm .sw-thumb { top: 2px; left: 2px; width: 15px; height: 15px; }
+.switch-sm[aria-checked="true"] .sw-thumb { transform: translateX(15px); }
 
 .editor { scroll-margin-top: var(--sp-6); }
 .g-head h3.doc-name { color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

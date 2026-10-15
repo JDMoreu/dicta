@@ -2130,3 +2130,372 @@ cambio nada. Solo cambiaron `build_exe.bat` (limpieza segura de `dist\`) y este
 
 La app quedo **viva** (`GET /state` 200), esta vez corriendo el **`.exe`
 congelado** de `dist/dicta` (WebView2 `Edg/155.0.4283.45`, sin elevar).
+
+## 52. El pegado automático funciona DENTRO de los agentes de terminal: mecanismo por destino (buffer de consola / texto tecleado / combinación / posteado)
+
+**Qué fallaba, medido y no supuesto.** El autor lo reportó tras la entrada 50:
+«en OpenCode, Claude y Pi no auto-pega; me toca dar Ctrl+Shift+V». Las tres
+hipótesis y lo que dio cada una:
+
+1. **Mecanismo de envío de teclas.** El código NO usa mensajes posteados:
+   `_send_key_event` llama a **`SendInput` (entrada real)** desde la entrada 50.
+   La hipótesis «la tecla va posteada y Electron la ignora» no aplica a este
+   código; se comprobó que `PostThreadMessageW`/`WM_KEYDOWN` no aparece en
+   `dicta.py`. (Aun así, el posteado se añade como último recurso, ver abajo.)
+2. **Portapapeles.** dicta pone el texto en el portapapeles y **no lo restaura**
+   (no existe ninguna ruta de restauración en `dicta.py`). La hipótesis «se
+   restaura demasiado pronto» queda descartada por ausencia: no hay restauración.
+3. **Detección del destino: AQUÍ ESTABA EL FALLO.** En el `dicta.log` de la
+   propia sesión del autor, las 15:59:19: dictó «Estoy probando el auto pegado en
+   PI y no funciona» con `destino: Hermes`, y la entrega fue
+   `Pegado (ctrl+v) enviado a [normal: Chrome_WidgetWin_1 / hermes.exe].`
+   Los agentes corren en una **terminal integrada dentro de una ventana
+   Chromium/Electron** (Hermes y OpenCode escritorio son Electron con terminal
+   tipo xterm.js): clase `Chrome_WidgetWin_1`, .exe `hermes.exe`, que el
+   clasificador trataba como **«normal» -> Ctrl+V**. Dentro de un xterm.js el
+   pegado está atado a **Ctrl+Shift+V** (un `<textarea>` sí pega con Ctrl+V), así
+   que Ctrl+V no hacía nada: el texto no llegaba y dicta decía «Texto insertado».
+
+**Medidas del mecanismo viejo y del nuevo** (con un lector en modo crudo real,
+`msvcrt.getwch` byte a byte a un fichero, que es el caso exacto de una TUI):
+
+| conhost + lector crudo (`ConsoleWindowClass` / `python.exe`) | lo que llega |
+|---|---|
+| **con la ventana EN PRIMER PLANO**: `ctrl+v` | `DICTASETCTRLVQ` (pega) |
+| **con la ventana EN PRIMER PLANO**: `ctrl+shift+v` | `'\x16'` -> NO pega (conhost solo ata Ctrl+V) |
+| **con la ventana EN PRIMER PLANO**: `shift+insert` | `DICTASETSHIFTINSERTQ` (pega) |
+| **con la ventana EN PRIMER PLANO**: una letra suelta | `y` (el teclado llega) |
+| **con la consola SIN el primer plano**: `ctrl+v` | `''` (no llega nada) |
+| **con la consola SIN el primer plano**: `ctrl+shift+v` | `''` (no llega nada) |
+| **con la consola SIN el primer plano**: buffer de consola (**nuevo**) | `NUEVOTEXTO3` completo |
+
+Es decir: el mecanismo viejo **depende del primer plano** (si el foco está en
+otra ventana, el `SendInput` se va a esa otra y no llega nada), y en una consola
+la combinación de pegado puede no existir. El mecanismo nuevo (escribir en el
+**buffer de entrada de la consola**) llega **con o sin primer plano**.
+
+**Windows Terminal: lo que NO se pudo verificar.** En este equipo Windows
+Terminal (`CASCADIA_HOSTING_WINDOW_CLASS` / `windowsterminal.exe`), con la
+ventana comprobada como `GetForegroundWindow`, **ni `ctrl+v`, ni `ctrl+shift+v`,
+ni `shift+insert` ni una letra suelta llegaron** al lector crudo de su pty (en un
+caso aislado sí llegó una `a`, o sea que el envío a WT es cuando menos
+inestable aquí). Causa del entorno medida: el primer plano se lo robaba
+continuamente una pestaña del navegador (una llamada continua a `window.focus()`:
+`GetForegroundWindow` volvía a la ventana de Brave en menos de un segundo) y este
+equipo tiene `SPI_GETFOREGROUNDLOCKTIMEOUT = 2147483647` (**INFINITO**: ninguna
+otra cosa que el primer plano puede poner el foco; solo lo da un clic real o la
+creación de la ventana). Y el **buffer de consola tampoco vale para WT**: su
+cliente corre bajo un ConPTY y `AttachConsole` responde **ACCESS_DENIED** (medido,
+pid del cliente del pty). Por eso el pegado de WT se queda como estaba: depende
+de que WT reciba de verdad el `Ctrl+Shift+V` de la entrada 50.
+
+**El arreglo (mecanismo elegido POR DESTINO, en `dicta.py`).** El clasificador
+`_clasificar_destino` deja de devolver una combinación y devuelve el **mecanismo**:
+
+| tipo | cuándo | mecanismo |
+|---|---|---|
+| `console` | clase `ConsoleWindowClass` (conhost real) | **`WriteConsoleInputW`**: el texto se escribe en el BUFFER DE ENTRADA de la consola (lo que lee una TUI); si la consola no se deja adjuntar (ConPTY) cae a Ctrl+V |
+| `chromium` | clase `Chrome_WidgetWin_1` y .exe de la lista nueva `_CHROMIUM_HOST_EXES` (`hermes.exe`, `opencode.exe`, `cursor.exe`, `windsurf.exe`, `claude.exe`, `codex.exe`, `kiro.exe`, `zed.exe`) | **texto TECLEADO con entrada real** (`SendInput` `KEYEVENTF_UNICODE`): dentro de Chromium el pegado depende del control con el foco (xterm.js pega con Ctrl+Shift+V, un `<textarea>` con Ctrl+V) y desde fuera no se adivina; tecleado entra siempre |
+| `terminal` | emulador (`CASCADIA_HOSTING_WINDOW_CLASS`, `windowsterminal.exe`, `code.exe`, `mintty.exe`…) | **Ctrl+Shift+V** (como la entrada 50) |
+| `normal` | lo demás (navegadores, apps normales) | **Ctrl+V** (sin cambios) |
+| último recurso | si el carril falla | **posteado**: `WM_PASTE` + `WM_KEYDOWN/UP` de Ctrl+V |
+
+Se conserva **`paste_mode`** (`auto`|`ctrl+v`|`ctrl+shift+v`|`shift+insert`) y
+`/state`: si no es `auto`, se FUERZA la combinación y se salta el mecanismo
+elegido (válvula de escape intacta). El respaldo `Shift+Insert` sigue ahí.
+
+**Verificado de punta a punta (con un AGENTE de terminal real).**
+- **`pi` v0.85.1** (TUI que lee el teclado en crudo) abierto en una consola real:
+  leyendo la pantalla de su consola (`ReadConsoleOutputCharacterW`) la línea de
+  entrada del prompt pasó de `hola dicta prueba uno dos` a
+  **`hola dicta prueba uno doshola dicta prueba uno dos`** al entregar el texto
+  con `fallback_paste` — **el texto dictado aparece en el prompt del agente**.
+  `pi` arrancó con avisos `EPERM` (no puede crear sus `~/.pi/agent/*.lock`) pero
+  su prompt acepta entrada. OpenCode y Claude Code **no están en PATH** (sí la
+  app de escritorio de OpenCode, que es Electron) — `pi` hizo de agente real.
+- **Punta a punta por la API viva**: `POST {"action":"test"}` con la consola del
+  lector delante -> el lector crudo recibió `prueba dicta 123` letra a letra y el
+  log dejó `[16:31:14] Pegado (buffer de consola) enviado a [console:
+  ConsoleWindowClass / python.exe].`
+- **Clasificación viva**: `Chrome_WidgetWin_1 / hermes.exe` -> **`chromium` /
+  `type`** (el caso del autor); `brave.exe` -> `normal` / `ctrl+v` (sin cambios).
+- **Entrada real tecleada** (`SendInput` Unicode) con la ventana en primer plano
+  -> `TECLEADOFG1` llega al lector crudo.
+- **Carril de siempre** `ctrl+v` con la ventana en primer plano -> `PEGADOFG2`
+  llega (sin regresión en aplicaciones normales).
+- **`/state` 200** con todas sus claves (`levels`, `uploads`, `engine_options`,
+  `icon_version`, `voice_threshold`, `silence_wait`, `rms`/`thr`/`voice`,
+  `paste_mode`, `hotkeys`, `mics`, `models`, `docs`, `meeting`, `mic_test`),
+  `/panel/icon.png` 200 `image/png`, `/download` con nombre invalido 404,
+  `dicta_crash.log` en **0 bytes**.
+
+**Cubre / no cubre.**
+- **Cubre**: consolas reales (conhost) -> buffer de entrada; ventanas
+  Chromium/Electron con terminal integrada (Hermes, OpenCode, Cursor…) -> texto
+  tecleado; emuladores de terminal -> Ctrl+Shift+V; aplicaciones normales ->
+  Ctrl+V; último recurso posteado.
+- **No cubre**: (a) Windows Terminal/ConPTY en este equipo, por lo dicho arriba
+  (no se pudo aislar si es del entorno o real); (b) si en una ventana Chromium el
+  foco NO está en la terminal del agente sino en otro campo (p. ej. el cuadro de
+  chat), ningún mecanismo de teclado lo arregla: el texto entra donde esté el
+  foco; (c) los agentes CLI que no estén instalados aquí (OpenCode/Claude Code no
+  están en PATH).
+
+**No se tocó:** `panel/*` (ni el HTML/CSS/JS), `dicta_ui.py`, `dicta_icon.py`, el
+cierre limpio (`shutdown_service`), la instancia única, los 5 atajos, `/download`,
+`doc.rename`/`delete`, `upload.remove`, `MicTest` ni la clase de reunión. Solo
+cambian `dicta.py` y este `CHANGES.md`.
+
+La app queda **viva** (`GET /state` 200, WebView2, motor Vulkan). **Aviso:** al no
+estar el autor delante NO se pudo relanzar elevada, así que esta instancia **no
+pega en ventanas elevadas** hasta que se reinicie con `run.bat` o el `.exe`.
+
+## 53. El pegado automático funciona en la terminal del autor (Terax): se TECLEA como entrada real, y `paste_mode` gana el modo forzado `type`
+
+**Qué terminal es, identificada y no supuesta.** El autor la llamaba «terax» y NO
+era Tera Term. En el menú Inicio del usuario está `Terax.lnk` ->
+`C:\Users\JDMoreu\AppData\Local\Terax\terax.exe` (vivo, PID 16452). Ventana: clase
+**`Tauri Window`**, .exe **`terax.exe`**. Es **Terax**, un terminal «ADE» de ~7 MB
+hecho con **Tauri 2 + Rust + React** (terax.app, crynta/Terax-AI): backend PTY
+nativo (`portable-pty` -> ConPTY en Windows) y frontend **xterm.js sobre canvas
+WebGL dentro de WebView2**. Sus shells (pestañas) son **PowerShell** con
+`profile.ps1` de integración, y en la del autor corre **`pi`** (pi-coding-agent),
+que es el caso que él reporta. No hay Tera Term/WezTerm/PuTTY/Alacritty/Cmder/
+ConEmu/Tabby/Hyper instalados: `where` solo encontró `wt.exe` (Windows Terminal de
+la Store).
+
+**Qué le pasaba, medido con receptor.** El clasificador miraba clase + .exe:
+`Tauri Window` / `terax.exe` no estaban en ninguna lista, así que caía a
+**«normal» -> Ctrl+V**. Medido con la ventana de Terax en primer plano (enviando
+desde un proceso de integridad MEDIA, porque el tecleado sintético de un proceso
+de integridad baja no atraviesa UIPI) y leyendo el resultado en la propia shell
+del terminal —«echo AAA BBB CCC» se ejecutó y devolvió el error con la cadena
+exacta, prueba de que la shell la recibió—:
+
+| mecanismo enviado a Terax (xterm.js) | lo que llegó |
+|---|---|
+| `type` (SendInput `KEYEVENTF_UNICODE`) | **llega**: la cadena aparece **exacta** en la entrada (`ZZTEST123` y `ALFA BETA GAMMA`, **con espacios**) |
+| `Ctrl+V` | **NO llega nada** (pantalla sin cambios, dos pruebas) |
+| `Ctrl+Shift+V` | **NO llega nada** de forma fiable |
+| `Shift+Insert` | **sí pega** (el token del portapapeles apareció en la entrada) |
+
+Elegir MAL el carril era justo lo que hacía que no llegara: **Ctrl+V no pega en el
+xterm.js de Terax**; el **tecleado como entrada real sí**, y es el mismo camino
+que ya se usa para las ventanas Chromium/Electron.
+
+**El arreglo.** (1) `_clasificar_destino` gana el caso **Tauri/WebView2**: clases
+`tauri window` / `tao thread event target` (`_TAURI_CLASSES`) o .exe en
+`_TAURI_HOST_EXES` (`terax.exe`) -> **`tauri` / mecanismo `type`** (texto
+tecleado), igual que Chromium. (2) `paste_mode` acepta el valor forzado **`type`**
+(teclear el texto, sin depender de la combinación ni del portapapeles) además de
+`ctrl+v` / `ctrl+shift+v` / `shift+insert`; la lista se publica en **`/state`
+(`paste_modes`)**. (3) `PASTE_MODES` y los comentarios lo documentan.
+
+**Verificado.**
+- Clasificación con el **código real** de `dicta.py` (extraído con `ast`, contra la
+  ventana viva): `Tauri Window / terax.exe` -> **`tauri` / `type`**. Sin regresión:
+  `Chrome_WidgetWin_1 / hermes.exe` -> `chromium` / `type` (antes y ahora) y
+  `Chrome_WidgetWin_1 / brave.exe` -> `normal` / `ctrl+v` (sin cambios).
+- `python -m py_compile dicta.py` OK.
+- Punta a punta del mecanismo en ESA terminal: con las cadenas tecleadas
+  (`ZZTEST123`, `ALFA BETA GAMMA`) el terminal de Terax las exhibió **exactas**,
+  incluidas las que llevan espacios.
+- `GET /state` 200 con todas sus claves.
+
+**Cubre / no cubre.**
+- **Cubre**: consolas reales (conhost) -> buffer de entrada; Chromium/Electron
+  (Hermes, OpenCode...) -> tecleado; **Tauri/WebView2 (Terax) -> tecleado** (nuevo);
+  emuladores de terminal genéricos -> Ctrl+Shift+V; normales -> Ctrl+V.
+- **No cubre**: (a) Terax con la shell en `cmd.exe` (aquí arranca PowerShell) no
+  medido; (b) si el foco está en otro campo del WebView y no en la terminal, el
+  texto entra donde esté el foco (igual que en Chromium); (c) `Ctrl+Shift+V`
+  quedó como no fiable en Terax, por eso el carril elegido es el tecleado.
+
+**No se tocó:** `panel/*`, `dicta_ui.py`, `dicta_icon.py`, el cierre limpio
+(`shutdown_service`), la instancia única, los atajos, `/download`,
+`doc.rename`/`delete`, `upload.remove`, `MicTest` ni la clase de reunión. Solo
+cambian `dicta.py` y este `CHANGES.md`.
+
+**Aviso sobre la instancia en curso.** La app sigue **viva** (`GET /state` 200,
+WebView2, Vulkan), pero el proceso en ejecución (PID 13056, `pythonw.exe`,
+integridad ALTA = elevado) se arrancó ANTES de este cambio y todavía no incluye el
+carril `tauri`/`type` ni `paste_modes`. Al relanzar con `run.bat` (o el `.exe`),
+que se auto-eleva, quedará activo. No se relanzó aquí a propósito: el autor no está
+delante para aceptar UAC y un relanzamiento desde este entorno en segundo plano
+degradaría la app a integridad BAJA y dejaría de pegar en TODAS las ventanas.
+Mientras tanto, sin relanzar, `POST {"action":"paste_mode","value":"shift+insert"}`
+ya pega en Terax (medido).
+
+## 54. Actualización desde la propia app: avisa de versión nueva y la descarga, con la comprobación APAGADA de fábrica (nada sale del equipo)
+
+**Qué pide el autor.** (1) Poder enterarse y actualizar **desde la propia app**
+sin bajar de nuevo el ZIP de GitHub («que aparezca que hay una nueva versión
+disponible»). (2) Un `CHANGELOG.md` público que explique, versión por versión,
+qué cambió, por qué y qué se solucionó. (3) Que las versiones anteriores sigan
+en GitHub.
+
+**PROMESA DE PRODUCTO (no negociable): nada sale del equipo.** La comprobación de
+versión es lo ÚNICO que puede abrir la red, y SOLO si el autor la activa a mano.
+El ajuste **`check_updates`** de `dicta_config.json` viene **APAGADO de fábrica**.
+Con él activo, dicta hace **una petición GET anónima** a la API pública de GitHub
+(`repos/JDMoreu/dicta/releases/latest`) con un `User-Agent` de la app; esa
+petición **no lleva ningún dato del usuario** (ni identificadores, ni telemetría,
+ni el estado de la app): lo único que viaja es la propia URL pública. Con el
+ajuste apagado, `check_update()` **sale ANTES de tocar la red** y no se abre
+ninguna conexión.
+
+**Cambios (dicta.py, dicta_config.json).**
+
+- **Versión única.** Nueva constante **`VERSION = "1.0.0"`** (la que el panel
+  muestra como `v1.0.0`); `APP_VERSION` pasa a ser un alias de ella. Es el ÚNICO
+  sitio donde se cambia la versión: de ahí salen `/state.version`, el log de
+  arranque y el comparador de actualizaciones.
+- **`/state.version`** sale ahora de `VERSION` (antes `APP_VERSION = "1.0"`).
+- **`/state.update`** nuevo:
+  `{available, latest, url, notes, checked_at, progress}` (+ `enabled`, `error`,
+  `applied`, `asset_url/size/sha256`, `staged_dir`). Arranca con
+  `enabled=false`, todo vacío y `progress=0`.
+- **`POST {"action":"check_update"}`**: consulta la última release **solo si el
+  ajuste está activo**. Si no, responde `{"ok":false}` con el estado limpio y
+  **sin red**. Si está activo rellena `available/latest/url/notes/checked_at`
+  (y de la release saca el ZIP portable: `asset_url`, `asset_size` y, si GitHub
+  publica `digest` `sha256:…`, `asset_sha256`).
+- **`POST {"action":"update"}`**: descarga el ZIP de la release, **verifica su
+  integridad** (tamaño siempre; `sha256` si la release lo publica), lo extrae a
+  una carpeta temporal y **lanza un ayudante `.cmd`** que espera a que la app se
+  cierre, sustituye los ficheros con `robocopy /E` (que **no borra** los datos
+  del usuario: `dicta_config.json`, `uploads/`, modelos extra…) y vuelve a
+  arrancar la app. El trabajo pesado va en un hilo: el POST responde ya y el
+  avance se sigue por `/state.update.progress`. **No se intenta reemplazar el
+  `.exe` en caliente.**
+- **`POST {"action":"check_updates","value":true|false}`**: interruptor que el
+  panel usará para encender/apagar la comprobación (persiste en
+  `dicta_config.json`). Al activarlo lanza una comprobación en segundo plano; al
+  apagarlo limpia el estado y dicta deja de tocar la red.
+- **`dicta_config.json`**: nueva clave `check_updates: false` y se siembra sola
+  al arrancar si falta (mismo patrón que `paste_mode`/`silence_wait`).
+
+**Interfaz para el panel (NO tocada aquí; otro agente trabaja en `panel/*`).**
+El panel puede: leer `state.version` y `state.update`; enviar
+`{"action":"check_updates","value":<bool>}` para el interruptor;
+`{"action":"check_update"}` para «Comprobar ahora»; y `{"action":"update"}` para
+actualizar. No se ha modificado ningún fichero de `panel/`.
+
+**Verificación (MEDIDA en este equipo).**
+
+- **APAGADO no sale a la red (demostrado).** Con `urllib.request.urlopen`
+  monkeypatcheado para contar y **lanzar error si se le llama**, `check_update()`
+  con `check_updates=false` devolvió el estado limpio con **0 llamadas** a
+  `urlopen` y la línea de log `Actualizaciones: comprobacion desactivada; no se
+  consulta la red.` En vivo, `POST check_update` con el ajuste apagado →
+  `{"ok":false, ...,"enabled":false,"latest":""}` y `POST update` → rechazado con
+  `{"ok":false,"error":"comprobacion desactivada"}`.
+- **ACTIVADO detecta la release.** `check_update()` con el ajuste activo →
+  `latest="1.0.1"`, `url="https://github.com/JDMoreu/dicta/releases/tag/v1.0.1"`,
+  `notes` con el cuerpo de la release, `checked_at` con fecha, `available=true`.
+  En vivo, tras `POST {"action":"check_updates","value":true}`, `/state.update`
+  trajo `latest=1.0.1`, la url y las notas.
+- **Comparador de versiones:** `1.0.1>1.0.0`, `1.0.0==1.0.0`, `v1.0==1.0.0`,
+  `1.2>1.1.9`, `1.0.10>1.0.9` → todos correctos.
+- **Descarga y verificación REALES contra la release v1.0.1.** `download_update()`
+  bajó `dicta-portable-1.0.1-windows-x64.zip` (**261 415 062 B**, 4,7 s) y
+  verificó el sha256 contra el `digest` de la release:
+  `528cde2d4c32f7cd31c635c434afa6f1da6156b47983ff9011eea599a82b3465` → **cuadra**.
+  `POST {"action":"update"}` en vivo: `progress` subió 22→73→90→100 y el log
+  registró `sha256 verificado`. (Como la instancia viva corre en **modo fuente**,
+  no el `.exe` congelado, la app reportó `applied:"descargado (modo fuente)"` y
+  **no se aplicó**: ver límite abajo.)
+- **Extracción y ayudante.** `prepare_update()` extrajo el ZIP real (raíz
+  `dicta.exe` + `dicta.exe.config` + `_internal/` con `panel/index.html` +
+  `models/ggml-small-q5_1.bin`) y generó `apply_update.cmd` con `SRC`/`DST`/`EXE`
+  y el bucle `tasklist`/`findstr` de espera. **Mecanismo probado en un banco de
+  arena** (con la MISMA plantilla): con un proceso simulando la app viva, el
+  ayudante **no tocó nada en 4 s**; al matar el proceso, copió el fichero nuevo,
+  **conservó** `keep_user_data.txt` y `dicta_config.json` (los datos del usuario)
+  y **arrancó** de nuevo. `_sha256_file` coincide con `hashlib`.
+- **`py_compile dicta.py` OK.** `GET /state` **200** con `version="1.0.0"` y
+  `update` presente; el resto de claves intactas (`levels`, `uploads`,
+  `engine_options`, `icon_version`, `voice_threshold`, `silence_wait`,
+  `rms`/`thr`/`voice`, `paste_mode`, `queue`, `docs`, `mic_test`, `hotkeys`);
+  `/panel/icon.png` **200**, `/panel/` **200**.
+
+**Límite honesto (el único).** La sustitución en caliente (ayudante que espera al
+cierre y reemplaza los ficheros) **solo se puede llevar a cabo desde el `.exe`
+congelado** (el paquete portable). Corriendo en **modo fuente** (`dicta.py`, como
+esta instancia) no hay `.exe` que sustituir: dicta **descarga, verifica y deja el
+paquete listo** en `.tmp/update/new`, y lo indica (`applied:"descargado (modo
+fuente)"`) en vez de intentar reemplazar el código en marcha. Es el
+comportamiento seguro; el camino automático completo se activa en el portable.
+
+**CHANGELOG.md público.** Nuevo fichero en la raíz, en español, de la versión más
+nueva a la más antigua: **v1.0.1** (pegado en terminales) y **v1.0.0** (primera
+pública), más lo que queda para la **próxima versión** (pegado en agentes/Terax y
+esta comprobación de actualizaciones). Contenido sacado de este `CHANGES.md`
+(entradas 49–53), **sin inventar nada**.
+
+**No se tocó:** `panel/*`, `dicta_ui.py`, `dicta_icon.py`, el cierre limpio
+(`shutdown_service`: sigue liberando la VRAM), la instancia única, los atajos,
+`/state` (el resto de claves), `/panel/icon.png`, `/download`,
+`doc.rename`/`delete`, `upload.remove`, `MicTest` ni la clase de reunión. Solo
+cambian `dicta.py`, `dicta_config.json`, este `CHANGES.md` y el nuevo
+`CHANGELOG.md`.
+
+**Aviso sobre la instancia en curso.** La app quedó **viva** (`GET /state` 200,
+`version="1.0.0"`, `update` con la comprobación **apagada**). Se relanzó con el
+intérprete del venv (`pythonw.exe`, **sin elevar**), porque no se pudo relanzar
+elevada sin el autor delante: esta instancia **no pega en ventanas elevadas**
+hasta que se reinicie con `run.bat` o el `.exe`.
+
+## 55. Reempaquetado portable 1.0.2: el pegado por destino, la sección única «Audios y documentos» y la actualización desde la app van DENTRO del `.exe` (verificado de punta a punta)
+
+**Qué se publica.** El paquete **`dist/dicta-portable-1.0.2-windows-x64.zip`**
+sube **`VERSION` a `"1.0.2"`** (la ÚNICA constante de versión). Lleva ya el código
+de hoy: (1) el **pegado automático por destino** (consola → buffer de la consola,
+Chromium/Electron → texto tecleado como entrada real, Tauri/WebView2 como Terax →
+texto tecleado, emulador de terminal → Ctrl+Shift+V, aplicación normal → Ctrl+V);
+(2) la sección única **«Audios y documentos»** del panel (viaja dentro del bundle,
+en `_internal/panel/`); y (3) la **actualización desde la propia app**
+(`/state.update`, `check_update`/`update`, el ayudante `.cmd` que espera al cierre
+y sustituye con `robocopy` conservando los datos del usuario) con el ajuste
+**`check_updates` APAGADO de fábrica**.
+
+**Compilación (receta medida).** `.venv/Scripts/python.exe -m PyInstaller
+--noconfirm --clean dicta.spec` (el shim `pyinstaller.exe` está roto; hay que usar
+`-m PyInstaller`). Salida en `dist/dicta/`: `dicta.exe` + `dicta.exe.config` (al
+lado del `.exe`, TOC `EXECUTABLE` para que .NET lea `loadFromRemoteSources`) +
+`_internal/` + `models/` (con `ggml-small-q5_1.bin`). `dicta.py` reescribe
+`dicta.exe.config` al arrancar si falta (`ensure_dotnet_config`).
+
+**Contenido del ZIP (1077 ficheros, 261 434 121 bytes).** `dicta.exe`,
+`dicta.exe.config`, `_internal/` (con `_internal/panel/`) y `models/` con
+`ggml-small-q5_1.bin` dentro. **Sin** datos del usuario (ni `audios/`, `textos/`,
+`uploads/`, `dicta.log`, `dicta_config.json`, `.tmp/`). `testzip` → OK.
+`sha256 = 61bc2de78255f1bd2fa2aa807495d2bbdac7983bdc46e442d69d76539d1a1edb`.
+Los ZIP 1.0.0 y 1.0.1 NO se tocan.
+
+**Verificado (esta entrada).**
+
+- **(a) Arranque congelado en carpeta limpia y entorno saneado** (sin
+  `PYTHONPATH`/`VIRTUAL_ENV` heredados): `GET /state` **200** con
+  `version="1.0.2"`; el log dice **«Panel: backend WebView2 (pywebview)»** y
+  «Panel abierto (WebView2, sin barra nativa)». **Sin elevación** (`elevado: no`;
+  manifest `asInvoker`).
+- **(b) Transcripción real** de un `.wav` subido por la API: cola `listo`, `.md`
+  generado en `textos/` con la transcripción; modelo `small` **del propio
+  paquete** (nada descargado).
+- **(c) Cierre limpio** (`POST {"action":"quit"}`): puerto libre, `dicta.exe` y
+  `whisper-server.exe` **muertos** (VRAM liberada, ninguna retenida).
+- **(d) Pegado desde el `.exe` congelado**, con receptor fiable: en una **consola
+  en modo crudo** llegó el texto (log: «Pegado (buffer de consola) enviado a
+  [console: …]»); en una **ventana normal** (Tk) llegó por Ctrl+V (log: «Pegado
+  (ctrl+v) enviado a [normal: …]»). En ambos casos el texto recibido fue
+  `prueba dicta 123`.
+- **(e) ZIP**: contiene `dicta.exe`, `dicta.exe.config`, `_internal/` y `models/`;
+  NO contiene datos del usuario; `testzip` correcto (ver arriba).
+- **(f) Sin red con la app congelada y `check_updates` apagado**: `/state.update`
+  queda con `enabled=false` y `latest=""` (la comprobación sale ANTES de tocar la
+  red).
+
+**No se tocó:** `panel/*`, `dicta_ui.py`, `dicta_icon.py`, el cierre limpio
+(`shutdown_service`), la instancia única, los atajos ni el resto de `/state`. Solo
+cambian `dicta.py` (la constante `VERSION`) y este `CHANGES.md`.

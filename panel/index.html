@@ -36,7 +36,7 @@
 
   <div class="app-body">
 
-    <!-- ============= raíl: 7 secciones, una a la vista ============= -->
+    <!-- ============= raíl: 6 secciones, una a la vista ============= -->
     <nav class="rail" id="rail" data-i18n-aria="ui.sections" aria-label="Secciones de ajustes">
 
       <button class="rail-item" type="button" data-sec="dictado" aria-current="true">
@@ -55,16 +55,15 @@
         <span data-i18n="ui.meeting">Reunión</span>
       </button>
 
+      <!-- Audios y Documentos son UNA SOLA sección: antes eran dos botones y el
+           autor creía que eran dos sesiones distintas. Ahora es un único sitio
+           donde se añade audio o vídeo, se listan los ficheros subidos y las
+           grabaciones de reunión, y cada cosa lleva dentro su audio y su
+           transcripción. -->
       <button class="rail-item" type="button" data-sec="audios">
         <span class="ri" data-icon="file-audio" data-size="17"></span>
-        <span data-i18n="ui.audios">Audios</span>
-        <span class="cnt" id="queueCount" hidden></span>
-      </button>
-
-      <button class="rail-item" type="button" data-sec="documentos">
-        <span class="ri" data-icon="file-text" data-size="17"></span>
-        <span data-i18n="ui.docs">Documentos</span>
-        <span class="cnt" id="docsCount" hidden></span>
+        <span data-i18n="ui.audiosDocs">Audios y documentos</span>
+        <span class="cnt" id="mediaCount" hidden></span>
       </button>
 
       <button class="rail-item" type="button" data-sec="atajos">
@@ -464,19 +463,25 @@
         </div>
       </section>
 
-      <!-- ---------------------------- 4 · AUDIOS ---------------------------- -->
+      <!-- ------------------- 4 · AUDIOS Y DOCUMENTOS (uno) ------------------- -->
+      <!-- UNA SOLA sección: antes «Audios» y «Documentos» eran dos botones y el
+           autor las leía como dos sesiones distintas. Aquí se añade audio o
+           vídeo, se listan los ficheros subidos Y las grabaciones de reunión, y
+           cada cosa lleva DENTRO su audio y su transcripción completa, con las
+           mismas acciones (reproductor, descargar .md/.txt/.wav, renombrar,
+           quitar/eliminar en dos pasos). -->
       <section data-sec="audios" hidden>
         <div class="pane-head">
-          <h2 data-i18n="ui.audios">Audios</h2>
-          <p data-i18n="ui.audiosHint">Sube audio, vídeo o lo que sea: se guarda y se transcribe</p>
+          <h2 data-i18n="ui.audiosDocs">Audios y documentos</h2>
+          <p data-i18n="ui.audiosDocsHint">Un solo sitio: añade audio o vídeo y cada fichero queda aquí con su transcripción</p>
         </div>
 
-        <!-- La carta GRANDE es solo para AÑADIR. Cada fichero ya subido vive
-             FUERA de ella, en su propia ficha (abajo), con el mismo lenguaje de
-             tarjetas que Documentos: se ve que es un archivo aparte y guardado. -->
+        <!-- La carta es solo para AÑADIR. Lo añadido (y las grabaciones de
+             reunión) vive debajo, en UNA lista única de tarjetas donde cada
+             elemento enseña su audio y su transcripción. -->
         <div class="group">
           <div class="g-head">
-            <h3 data-i18n="ui.addAudio">Añadir audios</h3>
+            <h3 data-i18n="ui.addAudio">Añadir audio o vídeo</h3>
             <span class="hint" data-i18n="ui.addAudioHint">wav, flac, ogg; mp3 y m4a si hay ffmpeg</span>
           </div>
 
@@ -497,40 +502,17 @@
           </div>
         </div>
 
-        <!-- Ficheros subidos: una FICHA por archivo, suelta sobre el fondo
-             (sin caja contenedora), igual que las tarjetas de Documentos.
-             Aquí no se descarga nada: el fichero ya es del usuario. La acción
-             es QUITAR de la lista y, si ya hay transcripción, ir a su documento. -->
-        <div class="zone-head">
-          <h3 data-i18n="ui.uploads">Ficheros subidos</h3>
-          <span class="hint" data-i18n="ui.uploadsHint">Se guardan en la carpeta audios</span>
-        </div>
+        <!-- UNA sola lista: los ficheros subidos, las grabaciones de reunión y
+             los documentos ya transcritos, todos con la MISMA piel (.d-item).
+             Cada tarjeta lleva dentro su propio reproductor (onda real) y su
+             transcripción COMPLETA; en cuanto una subida tiene transcripción,
+             su ficha de subida desaparece y la sustituye la tarjeta del
+             documento —nunca se ve la misma cosa dos veces—. -->
         <div class="docs-wrap">
-          <div class="docs" id="uploads"></div>
-          <div class="state" id="uploadsEmpty">
+          <div class="docs" id="media"></div>
+          <div class="state" id="mediaEmpty">
             <span class="st-ico" data-icon="file-audio" data-size="20"></span>
-            <p data-i18n="ui.uploadsEmpty">Aún no has subido ningún fichero.</p>
-          </div>
-        </div>
-      </section>
-
-      <!-- -------------------------- 5 · DOCUMENTOS -------------------------- -->
-      <section data-sec="documentos" hidden>
-        <div class="pane-head">
-          <h2 data-i18n="ui.docs">Documentos</h2>
-          <p data-i18n="ui.docsHint">Revisa, edita y descarga</p>
-        </div>
-
-        <!-- Todo lo de un documento (ver la transcripción, descargar .md/.txt, el
-             audio, renombrar, eliminar y cerrar) vive DENTRO de su propia tarjeta
-             (el acordeón de .d-item). Antes, pulsar el nombre abría aquí una
-             segunda carta con el editor y repetía la transcripción: esa vista
-             duplicada se ha RETIRADO. -->
-        <div class="docs-wrap">
-          <div class="docs" id="docs"></div>
-          <div class="state" id="docsEmpty">
-            <span class="st-ico" data-icon="file-text" data-size="20"></span>
-            <p data-i18n="ui.docsEmpty">Aún no hay documentos.</p>
+            <p data-i18n="ui.mediaEmpty">Aún no hay nada. Añade un audio o graba una reunión y aparecerá aquí con su transcripción.</p>
           </div>
         </div>
       </section>
@@ -715,12 +697,36 @@
 
   <!-- ================================ pie ================================
        Sin botón de probar micrófono: la prueba vive SOLO en su grupo
-       («Micrófono» → «Probar la entrada»), no duplicada aquí. -->
+       («Micrófono» → «Probar la entrada»), no duplicada aquí.
+       LA FRANJA DE ACTUALIZACIONES vive AQUÍ, junto a la versión, porque es
+       donde el autor mira la versión: UNA sola línea con versión + estado real
+       («Al día» / «Actualización disponible» / «Actualización pendiente») + la
+       acción y el interruptor de comprobación (APAGADO por defecto: por
+       privacidad, dicta no pregunta a ningún sitio hasta que se encienda).
+       Mientras descarga, el progreso va en ESTA misma línea. Contrato del
+       backend: /state.version, /state.update = {available, latest, url, notes,
+       checked_at, progress, enabled, error, applied} y POST
+       {action:"check_updates"|"check_update"|"update"}. -->
   <footer class="app-foot">
     <button class="btn btn-ghost btn-icon" type="button" id="btnQuit"
             data-icon="power" data-size="16"
             data-i18n-aria="ui.quit" data-i18n-title="ui.quit"></button>
-    <span class="ver" id="ver"></span>
+
+    <div class="upd" id="updBar">
+      <span class="ver" id="ver"></span>
+      <span class="upd-state" id="updState">Al día</span>
+      <span class="u-prog upd-prog" id="updProg" hidden>
+        <span class="q-bar"><i id="updProgFill"></i></span>
+      </span>
+      <button class="btn btn-primary btn-sm upd-go" type="button" id="updApply" hidden
+              data-i18n-aria="ui.updateNow" data-i18n-title="ui.updateNow"
+              data-i18n="ui.updateNow">Actualizar</button>
+      <button class="switch switch-sm" type="button" id="updSwitch" role="switch" aria-checked="false"
+              data-i18n-aria="ui.checkUpdates" aria-label="Comprobar si hay versiones nuevas">
+        <span class="sw-thumb" aria-hidden="true"></span>
+      </button>
+    </div>
+
     <span class="foot-sp"></span>
     <button class="btn btn-primary btn-icon" type="button" id="btnDone"
             data-icon="check" data-size="16"
@@ -756,6 +762,32 @@
               data-i18n-aria="ui.quitConfirm" data-i18n-title="ui.quitConfirm">
         <span data-icon="power" data-size="16"></span>
         <span data-i18n="ui.quitConfirm">Apagar Dicta</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ======================== actualizar dicta ========================
+     Confirmación con el DISEÑO DE LA APP (nada de window.confirm): pregunta si
+     descargar y aplicar la versión nueva. «Cancelar» NO envía nada (la
+     descarga no llega a lanzarse); solo «Actualizar» lanza POST {action:"update"}.
+     Escape y clic fuera cancelan. -->
+<div class="dlg" id="updDialog" role="dialog" aria-modal="true"
+     aria-labelledby="updTitle" aria-describedby="updBody" hidden>
+  <div class="dlg-box">
+    <span class="tile accent dlg-ico" data-icon="refresh" data-size="18"></span>
+    <h2 class="dlg-title" id="updTitle" data-i18n="ui.updDialogTitle">¿Actualizar Dicta?</h2>
+    <p class="dlg-body" id="updBody"></p>
+    <div class="dlg-acts">
+      <button type="button" class="btn btn-soft" id="updCancel"
+              data-i18n-aria="ui.cancel" data-i18n-title="ui.cancel">
+        <span data-icon="x" data-size="16"></span>
+        <span data-i18n="ui.cancel">Cancelar</span>
+      </button>
+      <button type="button" class="btn btn-primary" id="updConfirm"
+              data-i18n-aria="ui.updateNow" data-i18n-title="ui.updateNow">
+        <span data-icon="download" data-size="16"></span>
+        <span data-i18n="ui.updateNow">Actualizar</span>
       </button>
     </div>
   </div>

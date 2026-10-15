@@ -123,6 +123,27 @@ const I18N = {
     "ui.docs": "Documentos",
     "ui.docsHint": "Revisa, edita y descarga",
     "ui.docsEmpty": "Aún no hay documentos.",
+    /* audios y documentos: UNA sola sección (antes eran dos y parecían dos
+       sesiones distintas). */
+    "ui.audiosDocs": "Audios y documentos",
+    "ui.audiosDocsHint": "Un solo sitio: añade audio o vídeo y cada fichero queda aquí con su transcripción",
+    "ui.mediaEmpty": "Aún no hay nada. Añade un audio o graba una reunión y aparecerá aquí con su transcripción.",
+    /* actualizaciones: la franja del PIE, junto a la versión. La comprobación
+       va APAGADA por defecto (privacidad): nada sale del equipo hasta que el
+       autor la encienda. Estados: al día / disponible / pendiente. */
+    "ui.checkUpdates": "Comprobar si hay versiones nuevas",
+    "ui.updOn": "Comprobación activada",
+    "ui.updOff": "Comprobación apagada",
+    "ui.updUpToDate": "Al día",
+    "ui.updAvailable": "Actualización disponible",
+    "ui.updPending": "Actualización pendiente",
+    "ui.updChecking": "Comprobando…",
+    "ui.updating": "Actualizando…",
+    "ui.updDone": "Actualizado",
+    "ui.updFailed": "No se pudo comprobar",
+    "ui.updateNow": "Actualizar",
+    "ui.updDialogTitle": "¿Actualizar Dicta?",
+    "ui.updDialogBody": "Se descargará y aplicará la versión {v}. La descarga la hace tu propio equipo: no se envía nada a ningún sitio.",
     "ui.docExpand": "Ver transcripción",
     "ui.docRead": "Abrir transcripción",
     "ui.docTranscript": "Transcripción",
@@ -238,7 +259,7 @@ const I18N = {
     "ui.dictStored": "Se guarda en dicta_config.json",
     "ui.dictStoredHint": "Junto a la aplicación, legible y editable a mano",
     "ui.queue": "Cola",
-    "ui.addAudio": "Añadir audios",
+    "ui.addAudio": "Añadir audio o vídeo",
     "ui.addAudioHint": "wav, flac, ogg; mp3 y m4a si hay ffmpeg",
     "ui.editorHint": "Se guarda solo en textos\\, nunca sale de tu equipo",
     "ui.shortcutsHint": "Se aplican en caliente, sin reiniciar",
@@ -376,6 +397,27 @@ const I18N = {
     "ui.docs": "Documents",
     "ui.docsHint": "Review, edit and download",
     "ui.docsEmpty": "No documents yet.",
+    /* audios and documents: ONE single section (used to be two, read as two
+       separate sessions). */
+    "ui.audiosDocs": "Audio and documents",
+    "ui.audiosDocsHint": "One place: add audio or video and every file stays here with its transcript",
+    "ui.mediaEmpty": "Nothing yet. Add an audio or record a meeting and it will show up here with its transcript.",
+    /* updates: the footer strip, next to the version. Checking is OFF by
+       default (privacy): nothing leaves the machine until it is switched on.
+       States: up to date / available / pending. */
+    "ui.checkUpdates": "Check for new versions",
+    "ui.updOn": "Checking on",
+    "ui.updOff": "Checking off",
+    "ui.updUpToDate": "Up to date",
+    "ui.updAvailable": "Update available",
+    "ui.updPending": "Update pending",
+    "ui.updChecking": "Checking…",
+    "ui.updating": "Updating…",
+    "ui.updDone": "Updated",
+    "ui.updFailed": "Could not check",
+    "ui.updateNow": "Update",
+    "ui.updDialogTitle": "Update Dicta?",
+    "ui.updDialogBody": "Version {v} will be downloaded and applied. The download happens on your own computer: nothing is sent anywhere.",
     "ui.docExpand": "View transcript",
     "ui.docRead": "Open transcript",
     "ui.docTranscript": "Transcript",
@@ -488,7 +530,7 @@ const I18N = {
     "ui.dictStored": "Stored in dicta_config.json",
     "ui.dictStoredHint": "Next to the app, readable and editable by hand",
     "ui.queue": "Queue",
-    "ui.addAudio": "Add audio",
+    "ui.addAudio": "Add audio or video",
     "ui.addAudioHint": "wav, flac, ogg; mp3 and m4a with ffmpeg",
     "ui.editorHint": "Saved only under textos\\, it never leaves your machine",
     "ui.shortcutsHint": "Applied live, no restart",
@@ -741,7 +783,10 @@ let state = {
   hotkeys: { meeting: "", meeting_cancel: "", meeting_stop: "" },
   sources: [], meeting_source: "all", meeting_mic: true,
   queue: [], meeting: {}, docs: [], mic_test: {}, uploads: null,
-  icon_version: "1", engine_options: [], engine_note: ""
+  icon_version: "1", engine_options: [], engine_note: "",
+  /* actualizaciones: APAGADAS por defecto (privacidad del producto). update
+     lo publica el backend; si aún no lo hace, `null` y la UI no muestra nada. */
+  check_updates: false, update: null
 };
 
 /* ---------------- backend ---------------- */
@@ -2036,13 +2081,9 @@ function paintUploadRow(r, it) {
   setRemoveState(r, !!r.del.dataset.confirm);   // el sondeo repinta el idioma
 }
 
-function paintUploads() {
-  const items = uploadItems();
-  syncRows($("#uploads"), uRows, items, it => it.name, makeUploadRow, paintUploadRow);
-  $("#uploadsEmpty").hidden = items.length > 0;
-  const cnt = $("#queueCount");
-  if (cnt) { cnt.hidden = items.length === 0; cnt.textContent = String(items.length); }
-}
+/* Los ficheros subidos ya NO tienen lista propia: viven en la MISMA lista que
+   los documentos (paintMedia), porque «Audios» y «Documentos» son UNA sola
+   sección. uploadItems() sigue dando la forma de cada subida. */
 
 /* ---- reunión: hub con tres caras (inicio / en vivo / resumen) ---- */
 /* Duración legible. Con grabaciones largas añade las HORAS (2:00:00 en vez de
@@ -2533,12 +2574,58 @@ function paintDocRow(r, d) {
   }
 }
 
-function paintDocs() {
+/* ---- audios y documentos: UNA SOLA lista ---- */
+/* Cada cosa que el autor añade o graba vive en el MISMO sitio y con la MISMA
+   tarjeta (.d-item): los ficheros subidos aún sin transcripción (en espera,
+   transcribiendo o con error) y los documentos ya transcritos (subidas
+   terminadas y grabaciones de reunión). En cuanto una subida tiene su
+   transcripción, su ficha de subida DESAPARECE: la sustituye la tarjeta del
+   documento, con su audio (onda real), la transcripción COMPLETA y todas las
+   acciones (descargar .md/.txt/.wav, renombrar, eliminar en dos pasos). Así
+   nada se ve dos veces y todo se lee como una sola parte. */
+
+/* Nombre base sin extensión: «X.md» y la grabación «X» caen en la misma clave,
+   que es lo que enlaza una subida con su documento ya transcrito. */
+function docStem(n) { return baseName(n).replace(/\.[^.]+$/, ""); }
+
+function paintMedia() {
+  const box = $("#media");
+  if (!box) return;
   const docs = (state.docs || []).slice().sort((a, b) => b.mtime - a.mtime);
-  syncRows($("#docs"), dRows, docs, d => d.name, makeDocRow, paintDocRow);
-  $("#docsEmpty").hidden = docs.length > 0;
-  const cnt = $("#docsCount");
-  if (cnt) { cnt.hidden = docs.length === 0; cnt.textContent = String(docs.length); }
+  const have = new Set(docs.map(d => docStem(d.name)));
+  /* Subidas cuyo documento YA está en la lista: no se pintan (su tarjeta de
+     documento las representa). El resto son las que van sueltas, en curso. */
+  const pend = uploadItems().filter(u => {
+    return ![u.doc, u.name].map(docStem).some(k => k && have.has(k));
+  });
+
+  const plan = [];
+  pend.forEach(u => plan.push({ cache: uRows, key: u.name, make: makeUploadRow,
+                                paint: paintUploadRow, data: u, isDoc: false }));
+  docs.forEach(d => plan.push({ cache: dRows, key: d.name, make: makeDocRow,
+                                paint: paintDocRow, data: d, isDoc: true }));
+
+  const seenU = new Set(), seenD = new Set();
+  plan.forEach((p, i) => {
+    let row = p.cache.get(p.key);
+    if (!row) { row = p.make(); p.cache.set(p.key, row); }
+    if (box.children[i] !== row.el) box.insertBefore(row.el, box.children[i] || null);
+    p.paint(row, p.data);
+    (p.isDoc ? seenD : seenU).add(p.key);
+  });
+  const prune = (cache, seen) => cache.forEach((row, key) => {
+    if (seen.has(key)) return;
+    if (row.dispose) row.dispose();
+    row.el.remove();
+    cache.delete(key);
+  });
+  prune(uRows, seenU);
+  prune(dRows, seenD);
+
+  const empty = $("#mediaEmpty");
+  if (empty) empty.hidden = plan.length > 0;
+  const cnt = $("#mediaCount");
+  if (cnt) { cnt.hidden = plan.length === 0; cnt.textContent = String(plan.length); }
 }
 
 async function deleteDoc(name) {
@@ -2564,13 +2651,154 @@ async function focusDocCard(name) {
   if (!name) return;
   const want = baseName(name);
   const stem = want.replace(/\.[^.]+$/, "");
-  showSection("documentos");
+  showSection("audios");                 /* la sección única: audios y documentos */
   const find = () => dRows.get(want) || dRows.get(stem) || dRows.get(stem + ".md");
   let r = find();
   if (!r) { merge(await getState()); paint(); r = find(); }
   if (!r) return;
   if (!r.expanded) toggleDoc(r);
   r.el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+
+/* ---- actualizaciones: la franja del PIE, junto a la versión ---- */
+/* Por privacidad la comprobación va APAGADA por defecto: el interruptor de la
+   franja solo la enciende si el autor quiere, y es el único momento en que
+   dicta pregunta por una versión nueva. El backend publica /state.version y
+   /state.update = {available, latest, url, notes, checked_at, progress,
+   enabled, error, applied}; las acciones son POST {action:"check_updates"} (el
+   ajuste), {action:"check_update"} (comprobar ahora) y {action:"update"}
+   (descargar y aplicar). La franja enseña SIEMPRE el estado real y, al pulsar
+   «Actualizar», pregunta ANTES con el diálogo propio del panel: si el autor
+   cancela no se envía nada y la descarga no llega a lanzarse. Si el backend no
+   publicara `update`, updInfo() devuelve null y la franja queda apagada. */
+let updBusy = false;      // entre pulsar «Actualizar» y que el backend termine
+let updTimer = null;      // sondeo breve mientras descarga
+
+function updInfo() {
+  const u = state.update;
+  return (u && typeof u === "object") ? u : null;
+}
+
+/* El ajuste vive en /state.update.enabled (backend); el respaldo local
+   (state.check_updates) deja la UI responder al instante tras el clic. */
+function updEnabled() {
+  const u = updInfo();
+  return u ? (u.enabled === true) : (state.check_updates === true);
+}
+
+/* Estado REAL de la franja, resuelto por prioridad: lo que está pasando ahora
+   manda. Devuelve la clave de texto y un `state` para dar color con CSS. */
+function updStatus(u) {
+  if (!updEnabled()) return { key: "ui.updOff", cls: "off" };
+  const prog = u ? Number(u.progress) || 0 : 0;
+  if (u && u.error) return { key: "ui.updFailed", cls: "err" };
+  if (updBusy || (prog > 0 && prog < 100 && u && u.available))
+    return { key: "ui.updating", cls: "run" };
+  if (u && u.applied) return { key: "ui.updPending", cls: "pend" };
+  if (u && u.available) return { key: "ui.updAvailable", cls: "new" };
+  if (u && u.checked_at) return { key: "ui.updUpToDate", cls: "ok" };
+  return { key: "ui.updChecking", cls: "wait" };
+}
+
+function paintUpdate() {
+  const sw = $("#updSwitch");
+  if (!sw) return;
+  const u = updInfo();
+  const on = updEnabled();
+  sw.setAttribute("aria-checked", String(on));
+
+  const st = updStatus(u);
+  const stEl = $("#updState");
+  if (stEl) {
+    const txt = t(st.key);
+    if (stEl.textContent !== txt) stEl.textContent = txt;
+    stEl.dataset.state = st.cls;
+    stEl.title = txt;
+  }
+
+  /* Progreso: el backend lo publica 0..100; se aceptan también 0..1. Solo se
+     enseña mientras descarga (o justo al empezar), y nunca con la comprobación
+     apagada. */
+  const prog = u ? Number(u.progress) || 0 : 0;
+  let pct = prog > 0 ? (prog <= 1 ? prog * 100 : prog) : -1;
+  if (updBusy && pct < 0) pct = 0;
+  if (!on) pct = -1;
+  if (pct >= 0) pct = Math.max(0, Math.min(100, pct));
+  const box = $("#updProg");
+  if (box) box.hidden = pct < 0;
+  const fill = $("#updProgFill");
+  if (fill && pct >= 0) fill.style.width = Math.round(pct) + "%";
+
+  /* La acción «Actualizar» solo cuando hay algo que aplicar y no está en
+     marcha; un aviso pendiente (ya descargado o reiniciando) no la repite. */
+  const go = $("#updApply");
+  if (go) {
+    go.hidden = !(on && u && u.available === true && !u.applied && !u.error
+                  && !updBusy && prog <= 0);
+  }
+}
+
+/* Interruptor del ajuste `check_updates`. Al activarlo se pide una comprobación
+   inmediata; el estado real llega por /state.update. */
+async function toggleUpdateCheck() {
+  const on = !updEnabled();
+  const u = updInfo();
+  if (u) u.enabled = on; else state.check_updates = on;   // respuesta inmediata
+  paintUpdate();
+  await send("check_updates", on);
+  if (on) await send("check_update");
+  merge(await getState());
+  paint();
+}
+
+/* Diálogo propio de confirmación: pregunta antes de descargar. Se construye con
+   los datos reales (versión y notas) y no envía nada por su cuenta. */
+function openUpdDialog() {
+  const dlg = $("#updDialog");
+  if (!dlg) return;
+  const u = updInfo() || {};
+  const body = $("#updBody");
+  if (body) {
+    const base = t("ui.updDialogBody").replace("{v}", verText(u.latest) || "");
+    body.textContent = u.notes ? base + "\n\n" + String(u.notes) : base;
+  }
+  dlg.hidden = false;
+  paintIcons(dlg);                 // iconos SVG en línea de sus botones
+  const c = $("#updConfirm");
+  if (c) c.focus();
+}
+
+function closeUpdDialog() {
+  const dlg = $("#updDialog");
+  if (dlg) dlg.hidden = true;
+}
+
+/* Aplicar: SOLO desde el diálogo (POST update). Mientras descarga, el progreso
+   se pinta en la franja del pie con /state.update.progress; este bucle corto
+   solo sirve para reencender el botón cuando ha terminado. */
+async function applyUpdate() {
+  closeUpdDialog();
+  if (updBusy) return;
+  updBusy = true;
+  paintUpdate();
+  await send("update");
+  merge(await getState());
+  paint();
+  if (updTimer) clearInterval(updTimer);
+  let n = 0;
+  updTimer = setInterval(async () => {
+    n++;
+    const s = await getState();
+    if (s) { merge(s); paint(); }
+    const u = updInfo();
+    const done = !u || !!u.applied || !!u.error || u.available !== true
+                 || (Number(u.progress) || 0) >= 100;
+    if (done || n > 200) {
+      clearInterval(updTimer); updTimer = null;
+      updBusy = false;
+      paintUpdate();
+    }
+  }, 1500);
 }
 
 async function uploadAudios(files) {
@@ -2630,10 +2858,10 @@ function paint() {
   paintWait();
   paintDict();
   paintSources();
-  paintUploads();
+  paintMedia();
   paintMeeting();
   paintLevels();                         // pistas vivas (reunión / prueba)
-  paintDocs();
+  paintUpdate();                         // actualizaciones (fila discreta)
   WAVES.forEach(labelPreview);           // etiquetas al idioma actual
   $("#hotkeyValue").textContent = hotkeyPretty(state.hotkey) || "Alt + Q";
   $("#cancelKeyValue").textContent = hotkeyPretty(state.cancel_key) || "Alt + E";
@@ -3017,6 +3245,24 @@ function wire() {
   $("#btnPickAudio").addEventListener("click", () => $("#audioFiles").click());
   $("#audioFiles").addEventListener("change", e => uploadAudios(e.target.files));
 
+  /* actualizaciones (franja del pie): interruptor del ajuste, botón Actualizar
+     que PREGUNTA antes con el diálogo propio, y el diálogo en sí. Cancelar no
+     envía nada: la descarga solo se lanza desde «Actualizar» del diálogo. */
+  const updSw = $("#updSwitch");
+  if (updSw) updSw.addEventListener("click", toggleUpdateCheck);
+  const updGo = $("#updApply");
+  if (updGo) updGo.addEventListener("click", openUpdDialog);
+  const updDlg = $("#updDialog");
+  const updCancel = $("#updCancel");
+  if (updCancel) updCancel.addEventListener("click", closeUpdDialog);
+  const updConfirm = $("#updConfirm");
+  if (updConfirm) updConfirm.addEventListener("click", applyUpdate);
+  if (updDlg) {
+    updDlg.addEventListener("click", e => {
+      if (e.target === updDlg) closeUpdDialog();     // clic fuera: cancela
+    });
+  }
+
   /* reunión: hub de grabación (sistema + micro) */
   $("#btnMeeting").addEventListener("click", async () => {
     const m = state.meeting || {};
@@ -3128,6 +3374,7 @@ function wire() {
 
   window.addEventListener("keydown", e => {
     if (e.key === "Escape") {
+      if (updDlg && !updDlg.hidden) { closeUpdDialog(); return; }
       if (quitDlg && !quitDlg.hidden) { closeQuit(); return; }
       if (!hkCapturing) cmd("hide");
     }
