@@ -2499,3 +2499,149 @@ Los ZIP 1.0.0 y 1.0.1 NO se tocan.
 **No se tocó:** `panel/*`, `dicta_ui.py`, `dicta_icon.py`, el cierre limpio
 (`shutdown_service`), la instancia única, los atajos ni el resto de `/state`. Solo
 cambian `dicta.py` (la constante `VERSION`) y este `CHANGES.md`.
+
+---
+
+## 56. El reproductor de un audio SUBIDO sobrevive al reinicio (`uploads[].src`), el interruptor `check_updates` PERSISTE, y la privacidad queda EXACTA (la comprobación de versión va ACTIVADA por defecto)
+
+**Qué cambia.** Tres arreglos pequeños en `dicta.py` (+ `README.md` y
+`CHANGELOG.md`). No se tocan `panel/*`, `dicta_ui.py` ni `dicta_icon.py`.
+
+**(1) El audio de cada subida se persiste y se publica con la MISMA forma que el
+panel ya entiende.** El nombre del audio de una subida (el fichero de `audios/`,
+`audios/<uid>.<ext>`) solo vivía en `queue[].src`, y `queue` es de la SESIÓN: al
+reiniciar se perdía y la tarjeta del documento (que sustituye a la ficha de la
+subida al transcribirse) se quedaba sin reproductor. Ahora `UploadStore` guarda la
+referencia en el manifiesto (`uploads/uploads.json`, campo interno `audio`) y la
+publica en `**/state.uploads[].src**` —el mismo campo que el panel ya lee—, así
+que **no hay que tocar el panel**. Además, para que el índice por nombre del panel
+(que lee `/state.queue[].src`) siga casando el documento con su audio tras el
+reinicio, `queue_for_state()` añade a `queue` entradas SINTÉTICAS de las subidas
+ya resueltas (no toca la cola real de transcripción). Una subida aún sin
+transcribir sigue apareciendo con su estado.
+
+**(2) El interruptor `check_updates` PERSISTE.** `POST {action:"check_updates",
+value:…}` llamaba a `config_set("check_updates", …)`, el mismo camino que el
+resto de ajustes. Se dejan consistentes los valores por defecto del CÓDIGO
+(`update_enabled()` y el relleno de arranque) a `True`, que es el valor decidido.
+
+**(3) Textos de privacidad EXACTOS.** El README gana una sección **Privacidad**
+que dice con precisión que **el audio y el texto nunca salen del equipo** y que lo
+único que la app puede sacar por su cuenta es la **consulta de la lista pública de
+versiones** de GitHub (`api.github.com/repos/JDMoreu/dicta/releases/latest`), que
+**no lleva ningún dato del usuario** y es **desactivable**. El CHANGELOG recoge el
+cambio de comportamiento en la sección «Próxima versión»: la comprobación pasa a
+ir **encendida por defecto**, con su porqué. Las notas publicadas de v1.0.2 no se
+tocan (son correctas para ese binario, que la lleva apagada).
+
+**Medido (esta entrada).** App de desarrollo (`.venv/Scripts/python.exe dicta.py`).
+
+- **(1) Subida real → transcripción → REINICIO.** `POST /upload` de un `.wav` de 4 s
+  (`prueba_subida_dicta.wav`, id `359c815489`): `uploads.json` queda con
+  `"audio": "f811b24627.wav"` y `/state.uploads[0].src = "f811b24627.wav"`. Tras
+  `POST {"action":"quit"}` y reabrir: `GET /state` **200**, `uploads[0].src =
+  "f811b24627.wav"` **sigue** y `queue` trae la entrada sintética
+  `{id:"359c815489", src:"f811b24627.wav", doc:"prueba_subida_dicta.md", status:"listo"}`,
+  de modo que el índice del panel resuelve el audio del documento.
+- **(2) Interruptor.** `POST check_updates false` → `dicta_config.json` queda
+  `"check_updates": false` y `/state.update.enabled=false`; cerrar y reabrir →
+  sigue **`false`** en el fichero y `enabled=false`. Se devuelve a `true` (valor
+  por defecto decidido) y queda persistido.
+- **(3) `/state` completo y sano.** `GET /state` **200** con TODAS sus claves
+  (`levels`, `uploads`, `engine_options`, `icon_version`, `voice_threshold`,
+  `silence_wait`, `rms`/`thr`/`voice`, `paste_mode`, `version`, `update`, `docs`,
+  `queue`, `hotkeys`…); `dicta_crash.log` en **0 bytes**. Nota de entorno: la
+  instancia que estaba viva al empezar era el **portable `dicta.exe` 1.0.2** (que
+  sirve SUS copias y escribe SU `dicta_config.json` en `Downloads/`): por eso un
+  POST sobre esa instancia no se veía en el `dicta_config.json` del proyecto.
+
+**No se tocó:** `panel/*`, `dicta_ui.py`, `dicta_icon.py`, el cierre limpio
+(`shutdown_service`), la instancia única, los atajos, `/panel/icon.png`,
+`/download`, `doc.rename/delete`, `upload.remove`, `MicTest`, la clase de reunión
+(ganancia, mezclador, `_normalize_wav`, párrafos) ni el pegado por destino.
+
+---
+
+## 57. Reempaquetado portable 1.0.3: el audio de los SUBIDOS, la franja de versión del pie, la comprobación de versiones ACTIVADA y la privacidad van DENTRO del `.exe` (verificado de punta a punta)
+
+**Qué se publica.** El paquete **`dist/dicta-portable-1.0.3-windows-x64.zip`**
+sube **`VERSION` a `"1.0.3"`** (la ÚNICA constante de versión; `APP_VERSION` la
+sigue). Lleva ya el código de hoy: (1) el **reproductor de un audio SUBIDO**
+(la tarjeta muestra su audio con la transcripción debajo); (2) la **referencia
+del audio de cada subida persistida en el manifiesto** y publicada en
+`/state.uploads[].src`; (3) la **franja de versión del pie** (Actualizado /
+Actualización disponible / Actualización pendiente); (4) la **comprobación de
+actualizaciones ACTIVADA de fábrica** (`check_updates`); y (5) los **textos de
+privacidad** actualizados.
+
+**Compilación (receta medida, sin cambios).**
+`.venv/Scripts/python.exe -m PyInstaller --noconfirm --clean dicta.spec` (el shim
+`pyinstaller.exe` del venv está roto). `build_exe.bat` borra SOLO `dist\dicta`, no
+`dist\` entero, para no llevarse los ZIP publicados. Salida en `dist/dicta/`:
+`dicta.exe` (7 760 552 B) + `dicta.exe.config` (1 192 B, AL LADO del `.exe` por el
+TOC `EXECUTABLE` del spec, que es de donde .NET saca `loadFromRemoteSources`) +
+`_internal/` (1 074 entradas) + `models/ggml-small-q5_1.bin` (190 085 487 B).
+`uac_admin=False`: manifest `asInvoker`. La carpeta se **regenera limpia** (los
+restos que había —`uploads/`, `.tmp/`, `dicta.log`, `dicta_config.json`— los borra
+el `rmdir dist\dicta` previo; comprobado: en la raíz solo hay los 4 elementos).
+
+**Contenido del ZIP (1077 entradas, 261 437 696 B).** Raíz:
+`dicta.exe`, `dicta.exe.config`, `_internal/` (con `_internal/panel/`, 4 ficheros)
+y `models/ggml-small-q5_1.bin`. **Sin** datos del usuario (ni `audios/`, `textos/`,
+`uploads/`, `dicta.log`, `dicta_config.json`, `.tmp/`). `testzip` → **OK**.
+Sin deriva: ni un fichero solo en el ZIP ni solo en `dist/dicta`, y el
+`sha256(dicta.exe)` del ZIP es idéntico al del disco.
+`sha256 = 9013c86e9c29b57283037b41525f6d45fe13abc5126c4237092ef04361356d94`.
+Los ZIP 1.0.0, 1.0.1 y 1.0.2 NO se tocan.
+
+**Verificado (esta entrada).** El `.exe` **del propio ZIP**, extraído a una carpeta
+limpia (`.tmp/clean103/`) y arrancado con el **entorno saneado** (`PYTHONPATH` y
+`VIRTUAL_ENV` sin heredar).
+
+- **(a) Arranque.** `GET /state` **200** con `version="1.0.3"`, `st="idle"`,
+  `model="small"`, `engine_resolved="vulkan"`; log: «dicta 1.0.3 listo … (elevado:
+  **no**)» y «Panel: backend **WebView2** (pywebview)». WebView2 comprobado de
+  verdad por `DICTA_WEBVIEW_DEBUG_PORT=47477`: `…/json/version` responde
+  **`Edg/155.0.4283.45`**. `uploads[].src` presente con subida:
+  `/state.uploads[0].src = "b2f21b6427.wav"` y el fichero existe en `audios/`.
+- **(b) Transcripción real de punta a punta, sin descargar nada.** El audio lo
+  sintetizó la **voz local de Windows** (Sabina, es-MX, 16 kHz mono,
+  `prueba103.wav` 289 646 B) y se subió por `POST /upload` (200, `saved:1`).
+  Modelo `small` **del propio paquete**. En **3 s** la ficha queda `listo` y el
+  documento `textos/prueba103.md` (313 B) sale con la transcripción real:
+  «Esta es una prueba de transcripción real de dicta versión 1 .03. El documento
+  se genera solo, sin salir del equipo.» y su sección de temas.
+- **(c) Cierre limpio** (`POST {"action":"quit"}`): `/state` deja de responder en
+  **3,5 s**; **0** procesos `dicta.exe`/`whisper-server.exe`, puertos **47810 y
+  47801 libres** y la **VRAM dedicada por proceso del `whisper-server`
+  (553 MB) liberada** (el `pid_1744` desaparece del contador
+  `\GPU Process Memory(*)\Dedicated Usage`); el resto de pids del escritorio
+  intactos.
+- **(d) Pegado desde el `.exe` congelado**, con receptores fiables:
+  **lector en modo CRUDO en una consola** (`ConsoleWindowClass / python.exe`):
+  llegó el texto por el **buffer de la consola** («Pegado (buffer de consola)
+  enviado a [console: …]») y el receptor leyó **16 chars = `prueba dicta 123`**
+  exactos; y una **aplicación normal** (ventana Win32 con control `EDIT` nativo,
+  clase `DictaRecv103` → clasificada `normal`): «Pegado (**ctrl+v**) enviado a
+  [normal: DictaRecv103 / python.exe]», **16 chars idénticos**.
+- **(e) ZIP**: contiene `dicta.exe`, `dicta.exe.config`, `_internal/` y `models/`;
+  NO contiene datos del usuario; `testzip` OK (arriba).
+- **(f) Con `check_updates` ACTIVADO (valor de fábrica) el `.exe` SÍ consulta y NO
+  se anuncia a sí mismo.** `POST /rpc {"action":"check_update"}` → **200** con
+  `available=false`, `latest="1.0.2"` (la release publicada más reciente),
+  `url=…/releases/tag/v1.0.2`, `enabled=true` y `checked_at` relleno; log:
+  «Actualizaciones: ultima 1.0.2 (**ya al dia**); consulta anonima, sin datos del
+  usuario.» Con 1.0.3 publicado, `/state.update` quedará `available=false` con
+  `latest="1.0.3"`.
+- **(g) `dicta.exe.config` viaja DENTRO del ZIP al lado del `.exe`** (raíz del ZIP,
+  1 192 B) y `dicta.py` lo reescribe al arrancar si falta
+  (`ensure_dotnet_config`).
+- **(extra) Persistencia tras REINICIO**: cerrada y reabierta la instancia limpia,
+  `/state` **200** con `uploads[0].src="b2f21b6427.wav"` **sigue** y la cola trae
+  la entrada sintética `{id:"65c82221a0", src:"b2f21b6427.wav",
+  doc:"prueba103.md", status:"listo"}`; `dicta_crash.log` en **0 bytes**.
+
+**No se tocó:** `panel/*`, `dicta_ui.py`, `dicta_icon.py`, `README.md`,
+`CHANGELOG.md`, `dicta.spec`, `build_exe.bat`, el cierre limpio
+(`shutdown_service`), la instancia única, los atajos ni el pegado por destino.
+Solo cambian `dicta.py` (la constante `VERSION`) y este `CHANGES.md`.

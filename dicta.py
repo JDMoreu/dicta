@@ -226,7 +226,7 @@ LOG_FILE = os.path.join(SCRIPT_DIR, "dicta.log")
 # aqui sale `/state.version` (el panel la pinta como vX.Y.Z) y el log de
 # arranque. El comparador de actualizaciones tambien la usa. `APP_VERSION` se
 # conserva como alias por compatibilidad.
-VERSION = "1.0.2"
+VERSION = "1.0.3"
 APP_VERSION = VERSION
 WHISPER_EXE = os.path.join(RESOURCE_DIR, "whisper_bin", "Release", "whisper-cli.exe")
 # Motores GPU: cada backend vive en su carpeta con su whisper-server + DLLs.
@@ -317,22 +317,24 @@ def config_set(key, value):
 
 
 # ------------------------------------------ actualizacion desde la propia app
-# PROMESA DE PRODUCTO (NO NEGOCIABLE): dicta es 100 % local y NADA sale del
-# equipo. La UNICA excepcion posible es la COMPROBACION DE VERSION, y solo si
-# el usuario la activa a mano con el ajuste `check_updates` de
-# dicta_config.json, que viene APAGADO de fabrica. Con el ajuste activo, dicta
-# hace UNA peticion GET a la API PUBLICA de GitHub (releases/latest) del repo
-# de dicta. Esa peticion NO lleva ningun dato del usuario: ni identificadores,
-# ni telemetria, ni el estado de la app; lo unico que viaja es la propia URL
-# publica (un GET anonimo). Si el ajuste esta apagado, la funcion sale ANTES de
-# tocar la red: no se abre ninguna conexion.
+# PROMESA DE PRODUCTO (NO NEGOCIABLE): el AUDIO y el TEXTO de dicta NUNCA salen
+# del equipo. La UNICA cosa que puede salir a la red es la COMPROBACION DE
+# VERSION, y es solo una peticion GET a la API PUBLICA de GitHub
+# (releases/latest) del repo de dicta para leer la lista publica de versiones.
+# Esa peticion NO lleva ningun dato del usuario: ni identificadores, ni
+# telemetria, ni el estado de la app, ni el audio ni el texto; lo unico que
+# viaja es la propia URL publica (un GET anonimo). Ademas es DESACTIVABLE: el
+# ajuste `check_updates` de dicta_config.json, ACTIVADO de fabrica, la
+# enciende/apaga; con el apagado, la funcion sale ANTES de tocar la red (no se
+# abre ninguna conexion).
 #
 # El estado de la ultima comprobacion se publica en `/state.update`:
 #   {available, latest, url, notes, checked_at, progress}
 # y se cambia con POST {"action":"check_update"} (comprueba, solo si esta
 # activo) y POST {"action":"update"} (descarga, verifica e instala el paquete
 # nuevo). El ajuste se enciende/apaga con
-# POST {"action":"check_updates","value":true|false}.
+# POST {"action":"check_updates","value":true|false} y PERSISTE en
+# dicta_config.json.
 UPDATE_REPO = "JDMoreu/dicta"
 UPDATE_API = f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest"
 UPDATE_UA = "dicta-update-check"     # GitHub exige un User-Agent en su API
@@ -347,9 +349,12 @@ _UPDATE_LOCK = threading.Lock()
 
 
 def update_enabled():
-    """True solo si el autor activo la comprobacion (`check_updates`). De
-    fabrica, False: dicta nunca consulta la red."""
-    return bool(config_get("check_updates", False))
+    """True si la comprobacion de version esta activa (`check_updates`).
+
+    ACTIVADA de fabrica: es lo unico que puede salir a la red, no lleva ningun
+    dato del usuario y se puede desactivar con el ajuste `check_updates`.
+    """
+    return bool(config_get("check_updates", True))
 
 
 def _version_tuple(value):
@@ -2568,13 +2573,29 @@ def _safe_upload_name(name: str) -> str:
     return base or "audio"
 
 
+def _audio_upload_ref(name: str) -> str:
+    """Nombre del audio reproducible de una subida, si sigue en ``audios/``.
+
+    Las subidas guardan su copia en ``audios/<uid>.<ext>`` (lo hace
+    ``TranscribeQueue.add``). Aqui se acepta solo el NOMBRE (nunca una ruta) y
+    se comprueba que el fichero exista todavia: si ya no esta, la referencia
+    deja de publicarse para no ofrecer un reproductor muerto.
+    """
+    b = os.path.basename(str(name or "").replace("\\", "/")).strip()
+    if not b or b in (".", "..") or ":" in b:
+        return ""
+    return b if os.path.isfile(os.path.join(AUDIOS_DIR, b)) else ""
+
+
 class UploadStore:
     """Registro PERSISTENTE de los audios que el autor sube a la cola.
 
     Cada fichero se guarda en ``uploads/`` (carpeta propia, NO temporal) y su
-    ficha -- nombre visible, tamano, documento y estado -- en ``uploads.json``,
-    de modo que la lista ``uploads`` de ``/state`` sobrevive a cerrar y abrir
-    la app. Estados: pendiente / transcribiendo / listo / error.
+    ficha -- nombre visible, tamano, documento, estado y la referencia de su
+    audio reproducible (``audio``: el fichero de ``audios/``, que puede
+    aparecer despues de la subida) -- en ``uploads.json``, de modo que la lista
+    ``uploads`` de ``/state`` sobrevive a cerrar y abrir la app. Estados:
+    pendiente / transcribiendo / listo / error.
     """
 
     STATES = ("pendiente", "transcribiendo", "listo", "error")
@@ -2610,6 +2631,7 @@ class UploadStore:
                     "size": int(it.get("size") or os.path.getsize(path)),
                     "doc": str(it.get("doc") or ""),
                     "duration": float(it.get("duration") or 0.0),
+                    "audio": _audio_upload_ref(it.get("audio")),
                     "state": st})
             except Exception:
                 continue
@@ -2647,7 +2669,7 @@ class UploadStore:
             fh.write(data)
         entry = {"id": uid, "name": visible, "stored": stored,
                  "size": len(data), "doc": "", "duration": 0.0,
-                 "state": "pendiente"}
+                 "audio": "", "state": "pendiente"}
         with self.lock:
             self.items.append(entry)
         self._save()
@@ -2689,8 +2711,35 @@ class UploadStore:
         doc = ""
         if item.get("doc"):
             doc = os.path.splitext(os.path.basename(item["doc"]))[0]
+        # La cola es la UNICA fuente del nombre del audio de una subida
+        # (audios/<uid>.<ext>): se guarda aqui para que la tarjeta conserve su
+        # reproductor aunque la app se reinicie y la cola (de sesion) se pierda.
+        audio = _audio_upload_ref(item.get("src"))
+        extra = {"audio": audio} if audio else {}
         self.set(key, state=st, doc=doc,
-                 duration=round(float(item.get("duration") or 0.0), 2))
+                 duration=round(float(item.get("duration") or 0.0), 2), **extra)
+
+    def audio_entries(self, skip_ids=()):
+        """Entradas de cola SINTETICAS para las subidas ya resueltas.
+
+        El panel indexa el audio por NOMBRE leyendo ``/state.queue[].src``; esa
+        cola es de la SESION, asi que tras reiniciar se queda vacia y la tarjeta
+        del documento (que sustituye a la ficha de la subida al transcribirse)
+        se quedaba sin reproductor. Aqui se recrean esas referencias desde el
+        manifiesto persistente: NO toca la cola real de transcripcion, solo
+        alimenta lo que se publica en ``/state.queue``.
+        """
+        skip = set(skip_ids or ())
+        out = []
+        with self.lock:
+            for i in self.items:
+                if not i.get("audio") or i["id"] in skip:
+                    continue
+                out.append({"id": i["id"], "label": i["name"], "status": "listo",
+                            "progress": 100.0, "src": i["audio"], "key": i["id"],
+                            "duration": float(i["duration"] or 0.0),
+                            "doc": (i["doc"] + ".md") if i["doc"] else ""})
+        return out
 
     def remove(self, name):
         """Quita la ficha por su NOMBRE visible y borra su fichero del disco.
@@ -2723,6 +2772,9 @@ class UploadStore:
             return [{"name": i["name"], "size": int(i["size"]),
                      "doc": i["doc"],
                      "duration": int(round(i["duration"] or 0)),
+                     # `src` = la MISMA forma que el panel ya lee en queue[].src:
+                     # es el audio reproducible de la subida en audios/.
+                     "src": i.get("audio") or "",
                      "state": i["state"], "id": i["id"]}
                     for i in self.items]
 
@@ -5025,6 +5077,19 @@ _audio_queue = TranscribeQueue()
 _uploads = UploadStore()          # audios subidos por el autor (persistentes)
 _audio_queue.on_change = _uploads.apply_queue_update
 _meeting = MeetingTranscriber()
+
+
+def queue_for_state():
+    """Lo que se publica en ``/state.queue``: la cola real MAS las referencias
+    de audio de las subidas ya resueltas (reconstruidas desde el manifiesto).
+
+    La cola es de la SESION; sin esta union, tras reiniciar el panel perdia el
+    reproductor de un audio subido ya transcrito (su audio solo vivia en
+    ``queue[].src``). No altera la cola de transcripcion en si.
+    """
+    live = _audio_queue.snapshot()
+    return live + _uploads.audio_entries([q.get("key") for q in live])
+
 _mic = None                    # lo fija main(); el cierre limpio lo para
 _crash_log_file = None
 
@@ -5596,10 +5661,12 @@ class Overlay:
     def on_check_updates(self, value):
         """Enciende/apaga la comprobacion de version (ajuste `check_updates`).
 
-        APAGADA de fabrica: mientras lo este, dicta NO consulta la red. Al
-        activarla se lanza una comprobacion en segundo plano (para no bloquear
-        el hilo HTTP) y el resultado se sigue en /state.update. Al apagarla se
-        limpia el estado y se deja de tocar la red.
+        ACTIVADA de fabrica. Mientras lo este, lo UNICO que sale a la red es una
+        peticion GET anonima a la API publica de GitHub (sin ningun dato del
+        usuario). Al activarla se lanza una comprobacion en segundo plano (para
+        no bloquear el hilo HTTP) y el resultado se sigue en /state.update. Al
+        apagarla se limpia el estado y se deja de tocar la red. El ajuste
+        PERSISTE en dicta_config.json igual que los demas (config_set).
         """
         enabled = bool(value) if not isinstance(value, str) \
             else value.strip().lower() in ("1", "true", "on", "si", "sí", "yes")
@@ -5895,11 +5962,13 @@ class Overlay:
                 "meeting_mic": bool(config_get("meeting_mic", True)),
                 "status": status, "status_kind": kind, "st": st,
                 "version": VERSION,
-                # Actualizacion desde la app: la comprobacion esta APAGADA de
-                # fabrica (`check_updates`). Si lo esta, `enabled` es False y
-                # no se ha consultado nada a la red; `progress` es 0..100.
+                # Actualizacion desde la app: la comprobacion esta ACTIVADA de
+                # fabrica (`check_updates`) porque es lo unico que puede salir a
+                # la red, no lleva datos del usuario y es desactivable. Si esta
+                # apagada, `enabled` es False y no se ha consultado nada a la
+                # red; `progress` es 0..100.
                 "update": dict(UPDATE_STATE),
-                "queue": _audio_queue.snapshot(),
+                "queue": queue_for_state(),
                 "uploads": _uploads.snapshot(),
                 "meeting": _meeting.snapshot(),
                 # Bandas de frecuencia de la reunion en curso (grave->agudo),
@@ -6373,9 +6442,10 @@ def main():
                        ("silence_wait", app.silence_wait),
                        ("paste_mode", getattr(app, "paste_mode", "auto")),
                        ("meeting_stop_key", app.meeting_stop_key_label),
-                       # Comprobacion de version: APAGADA de fabrica (nada
-                       # sale del equipo salvo que el autor la active).
-                       ("check_updates", bool(config_get("check_updates", False)))):
+                       # Comprobacion de version: ACTIVADA de fabrica (es lo
+                       # unico que puede salir a la red, sin datos del usuario
+                       # y desactivable).
+                       ("check_updates", bool(config_get("check_updates", True)))):
             if _k not in _cfg_disk:
                 config_set(_k, _v)
         elevado = _esta_elevado()

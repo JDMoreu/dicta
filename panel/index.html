@@ -700,9 +700,10 @@
        («Micrófono» → «Probar la entrada»), no duplicada aquí.
        LA FRANJA DE ACTUALIZACIONES vive AQUÍ, junto a la versión, porque es
        donde el autor mira la versión: UNA sola línea con versión + estado real
-       («Al día» / «Actualización disponible» / «Actualización pendiente») + la
-       acción y el interruptor de comprobación (APAGADO por defecto: por
-       privacidad, dicta no pregunta a ningún sitio hasta que se encienda).
+       («Actualizado» / «Actualización disponible» / «Actualización pendiente») +
+       la acción y el interruptor de comprobación (ACTIVADO por defecto: la
+       franja se ve en su estado normal sin encender nada; el interruptor sigue
+       ahí para apagarla).
        Mientras descarga, el progreso va en ESTA misma línea. Contrato del
        backend: /state.version, /state.update = {available, latest, url, notes,
        checked_at, progress, enabled, error, applied} y POST
@@ -714,7 +715,7 @@
 
     <div class="upd" id="updBar">
       <span class="ver" id="ver"></span>
-      <span class="upd-state" id="updState">Al día</span>
+      <span class="upd-state" id="updState">Actualizado</span>
       <span class="u-prog upd-prog" id="updProg" hidden>
         <span class="q-bar"><i id="updProgFill"></i></span>
       </span>

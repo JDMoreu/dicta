@@ -134,7 +134,7 @@ const I18N = {
     "ui.checkUpdates": "Comprobar si hay versiones nuevas",
     "ui.updOn": "Comprobación activada",
     "ui.updOff": "Comprobación apagada",
-    "ui.updUpToDate": "Al día",
+    "ui.updUpToDate": "Actualizado",
     "ui.updAvailable": "Actualización disponible",
     "ui.updPending": "Actualización pendiente",
     "ui.updChecking": "Comprobando…",
@@ -784,9 +784,11 @@ let state = {
   sources: [], meeting_source: "all", meeting_mic: true,
   queue: [], meeting: {}, docs: [], mic_test: {}, uploads: null,
   icon_version: "1", engine_options: [], engine_note: "",
-  /* actualizaciones: APAGADAS por defecto (privacidad del producto). update
-     lo publica el backend; si aún no lo hace, `null` y la UI no muestra nada. */
-  check_updates: false, update: null
+  /* actualizaciones: ACTIVADAS por defecto —la franja enseña su estado normal
+     sin que haya que encender nada—; el backend puede apagarlas y su `enabled`
+     manda. `update` lo publica el backend; si aún no lo hace, `null` y la UI no
+     muestra nada. */
+  check_updates: true, update: null
 };
 
 /* ---------------- backend ---------------- */
@@ -1878,10 +1880,32 @@ const UPLOAD_STATE = {
   error:          { key: "ui.stError", cls: "err" }
 };
 
+/* El audio de un fichero SUBIDO vive en audios/ con un nombre interno (a
+   diferencia de una reunión, que guarda el .wav con el nombre del documento).
+   El ÚNICO sitio donde el panel ve ese nombre es el `src` del trabajo en la
+   cola (/state.queue), así que se indexa por RAÍZ de nombre —la del documento y
+   la del propio fichero subido— para casar cada subida con su documento ya
+   transcrito. Sin este índice la tarjeta del documento no podía enseñar su
+   audio: la subida desaparecía al transcribirse (deduplicación) y la
+   transcripción quedaba justo donde iba el reproductor, sin audio que ver. */
+function queueAudioMap() {
+  const m = new Map();
+  (state.queue || []).forEach(q => {
+    const src = baseName(q.src || "");
+    if (!src) return;
+    [q.doc, q.label, q.src].forEach(v => {
+      const k = docStem(baseName(v || ""));
+      if (k && !m.has(k)) m.set(k, src);
+    });
+  });
+  return m;
+}
+
 /* Los ficheros subidos, ya con la forma de la ficha. Mientras el backend no
    publique `uploads`, se derivan de la cola (`queue`), que trae los mismos
    datos con otro nombre: UNA sola lista, nunca la misma cosa dos veces. */
 function uploadItems() {
+  const qa = queueAudioMap();
   if (Array.isArray(state.uploads)) {
     return state.uploads.map(u => ({
       name: String(u.name || ""),
@@ -1890,7 +1914,9 @@ function uploadItems() {
       doc: baseName(u.doc),
       state: String(u.state || "pendiente"),
       progress: Number(u.progress) || 0,
-      play: baseName(u.src || u.audio || "")
+      /* El reproductor de la ficha se puede pintar DESDE YA: el audio que el
+         backend puso en audios/ lo da la cola (aquí por raíz de nombre). */
+      play: baseName(u.src || u.audio || "") || qa.get(docStem(u.name)) || ""
     }));
   }
   return (state.queue || []).map(q => {
@@ -2566,9 +2592,15 @@ function paintDocRow(r, d) {
   }
   const kb = `${Math.max(1, Math.round((d.size || 0) / 1024))} KB`;
   if (r.prev.kb !== kb) { r.meta.textContent = kb; r.prev.kb = kb; }
-  const audio = baseName(d.audio);
-  if (r.prev.audio !== audio) {
-    r.dlWav.hidden = !audio; r.prev.audio = audio;
+  /* El audio de la tarjeta, en este orden: el .wav de la reunión (que hereda el
+     nombre del documento) o, si es un fichero subido, el audio del autor tal
+     como lo guarda la cola en audios/ (nombre interno). La descarga .wav solo
+     existe en el primer caso: /download sirve audios/<documento>.wav. */
+  const own = baseName(d.audio);
+  const audio = own || queueAudioMap().get(docStem(d.name)) || "";
+  if (r.prev.audio !== audio || r.prev.wav !== own) {
+    r.dlWav.hidden = !own;
+    r.prev.audio = audio; r.prev.wav = own;
     if (r.pv) { disposePreview(r.pv); r.pv = null; }
     if (audio) { r.pv = makePreview(audio); r.pvSlot.appendChild(r.pv.el); }
   }
@@ -2679,11 +2711,13 @@ function updInfo() {
   return (u && typeof u === "object") ? u : null;
 }
 
-/* El ajuste vive en /state.update.enabled (backend); el respaldo local
-   (state.check_updates) deja la UI responder al instante tras el clic. */
+/* El ajuste vive en /state.update.enabled (backend) y está ACTIVADO por
+   defecto: la franja enseña su estado normal sin que el autor encienda nada.
+   El respaldo local (state.check_updates) solo cubre el instante previo al
+   primer /state, así que su defecto también es encendido. */
 function updEnabled() {
   const u = updInfo();
-  return u ? (u.enabled === true) : (state.check_updates === true);
+  return u ? (u.enabled !== false) : (state.check_updates !== false);
 }
 
 /* Estado REAL de la franja, resuelto por prioridad: lo que está pasando ahora

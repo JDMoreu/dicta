@@ -108,16 +108,36 @@ release:
   se detecta y se pega **tecleando** el texto, que es lo único que entra en su
   xterm.js. Antes caía a `Ctrl+V` y no llegaba nada.
 
-**Comprobación de actualizaciones desde la propia app.**
+**Comprobación de actualizaciones desde la propia app — y encendida por defecto.**
 
-- La app podrá **avisar cuando haya una versión nueva** publicada, mostrando sus
-  notas, y **descargarla y aplicarla** sin tener que ir a GitHub.
-- **Nada sale de tu equipo salvo que tú lo actives.** La comprobación viene
-  **apagada de fábrica** (ajuste `check_updates`) y se activa desde el panel.
-  Cuando está activa, lo único que hace es **una consulta anónima** a la página
-  pública de releases de GitHub; **no envía ningún dato tuyo**: ni
-  identificadores, ni telemetría, ni el estado de la app. Si está apagada, dicta
-  **no abre ninguna conexión** a internet.
+- La app **avisa cuando hay una versión nueva** publicada, muestra sus notas y
+  puede **descargarla y aplicarla** sin tener que ir a GitHub.
+- Desde esta versión la comprobación viene **activada por defecto** (ajuste
+  `check_updates`): al arrancar, dicta consulta la **lista pública de versiones**
+  de GitHub para saber si hay una nueva.
+- **Qué sale y qué no:** el **audio y el texto nunca salen del equipo**. Lo
+  único que puede salir es esa consulta de versión, que **no lleva ningún dato
+  del usuario** (ni identificadores, ni telemetría, ni el estado de la app): es
+  una petición anónima a una URL pública.
+- **Se puede desactivar** con su interruptor en el panel (la franja de la
+  versión, en el pie). Con la comprobación apagada, dicta **no abre ninguna
+  conexión de red**.
+
+**Por qué este cambio de comportamiento**
+
+Antes la comprobación venía **apagada de fábrica** y había que encenderla a mano
+para enterarse de que había versión nueva. Al dejarla **encendida por defecto**,
+dicta se mantiene al día sin que nadie toque nada, a cambio de una consulta
+anónima y desactivable que no compromete la privacidad: ni el audio ni el texto
+salen del equipo.
+
+**Otras correcciones de esta versión**
+
+- **El reproductor de un audio subido ya no se pierde al reiniciar.** La
+  referencia del audio vivía solo en la sesión, así que al reiniciar la tarjeta
+  se quedaba sin reproductor; ahora se guarda con cada subida y se conserva.
+- **El interruptor de actualizaciones se guarda de verdad:** al cambiarlo solo
+  quedaba en memoria y se perdía al cerrar; ahora persiste en `dicta_config.json`.
 
 ---
 

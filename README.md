@@ -3,7 +3,29 @@
 App mínima de dictado por voz: **Alt+Q → hablas → Alt+Q (o pausa de 2 s) →
 insertar transcripción en el campo activo.** Se intenta Windows UI Automation
 primero, después Ctrl+V. La transcripción también se conserva en el portapapeles.
-100 % local.
+**100 % local**: el audio y el texto no salen de tu equipo (ver
+[Privacidad](#privacidad)).
+
+## Privacidad
+
+**El audio y el texto nunca salen del equipo.** La transcripción (dictado,
+audios y reuniones) y todo el procesamiento ocurren en tu máquina; tus
+grabaciones y tus transcripciones no se envían a ningún servidor.
+
+La **única** conexión que la app puede abrir por sí sola es la **comprobación
+de versión**: una petición `GET` a la **lista pública de versiones** del
+repositorio en GitHub
+(`api.github.com/repos/JDMoreu/dicta/releases/latest`) para saber si hay una
+versión nueva. Esa consulta **no lleva ningún dato del usuario** —ni
+identificadores, ni telemetría, ni el estado de la app, ni el audio ni el
+texto—: es una petición anónima a una URL pública. Viene **activada por
+defecto** (la franja de la versión, en el pie del panel, enseña su estado) y
+puedes **desactivarla** con su interruptor. Con la comprobación apagada, dicta
+no abre ninguna conexión de red.
+
+Lo demás que puede usar la red lo inicias tú: la descarga de un modelo de
+whisper que aún no esté en `models\` (la primera vez, desde HuggingFace) y la
+descarga de una actualización si pulsas el botón.
 
 ## Instalación
 
@@ -190,7 +212,8 @@ mancha (medido).
 
 ## Audios, reuniones y documentos
 
-Tres funciones en el panel, con el mismo motor (Vulkan/CPU) y 100 % local:
+Tres funciones en el panel, con el mismo motor (Vulkan/CPU) y sin salir del
+equipo (el audio y el texto nunca se suben):
 
 - **Audios** — sube **uno o varios** archivos (wav, flac, ogg; mp3/m4a si hay
   `ffmpeg` instalado). Se procesan **en cola** con barra de progreso; cada uno
