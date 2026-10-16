@@ -689,6 +689,18 @@ kbd.capturing { box-shadow: 0 0 0 2px var(--accent), inset 0 -2px 0 var(--line);
 .d-rename-wrap.bad .d-rename { box-shadow: 0 0 0 2px var(--err); }
 .d-rename-err { flex: 0 0 auto; font-size: var(--fs-micro); color: var(--err); }
 
+/* Nota del guardado («Guardar como...»): una línea bajo las descargas con la
+   ruta elegida. Misma piel que .pv-note (mono, micro, --text-3) y el color del
+   estado; oculta por defecto, así no ocupa nada cuando no se usa. */
+.d-save {
+  margin: 0; min-width: 0; max-width: 100%;
+  font-family: var(--fn-mono); font-size: var(--fs-micro);
+  color: var(--text-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.d-save[data-state="ok"] { color: var(--ok); }
+.d-save[data-state="err"] { color: var(--err); }
+
 /* ---------- franja de actualizaciones: pie, junto a la versión ----------
    UNA sola línea (versión + ACCIÓN de actualizar + nota breve + progreso +
    interruptor del ajuste). La acción es un ENLACE de texto (no un botón

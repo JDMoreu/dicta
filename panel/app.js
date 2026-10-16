@@ -105,6 +105,10 @@ const I18N = {
     "ui.dlDoc": "Descargar documento",
     "ui.dlDocMd": "Descargar .md",
     "ui.dlDocTxt": "Descargar .txt",
+    "ui.saveChoose": "Elige dónde guardar…",
+    "ui.saveDone": "Guardado en",
+    "ui.saveCancel": "Guardado cancelado",
+    "ui.saveFail": "No se pudo guardar",
     "ui.docRename": "Renombrar",
     "ui.remove": "Quitar",
     "ui.ttChangeDictate": "Cambiar atajo de dictado",
@@ -405,6 +409,10 @@ const I18N = {
     "ui.dlDoc": "Download document",
     "ui.dlDocMd": "Download .md",
     "ui.dlDocTxt": "Download .txt",
+    "ui.saveChoose": "Choose where to save…",
+    "ui.saveDone": "Saved to",
+    "ui.saveCancel": "Save canceled",
+    "ui.saveFail": "Could not save",
     "ui.docRename": "Rename",
     "ui.remove": "Remove",
     "ui.ttChangeDictate": "Change dictation shortcut",
@@ -2375,6 +2383,9 @@ function syncMicTestPv(mt) {
 }
 
 const mRows = new Map();
+/* Nota del guardado de la grabación de reunión: misma mecánica que la de las
+   tarjetas (`saveNote` + `saveT`), fuera de la lista de tarjetas. */
+const meetSave = { saveNote: null, saveT: null, busy: false };
 
 /* ==========================================================================
    AUDIOS Y DOCUMENTOS: una SOLA tarjeta, rehecha desde cero
@@ -2589,16 +2600,23 @@ function makeMediaCard() {
   const dlWav = mkFmt("file-audio", ".wav", "wav");
   tools.append(dlMd, dlTxt, dlWav);
 
-  el.append(head, pvSlot, stateRow, transcript, tools);
+  /* Confirmación del guardado (ruta elegida): propia línea, oculta por defecto
+     para que no ocupe ni un píxel mientras no se usa. */
+  const saveNote = document.createElement("p");
+  saveNote.className = "d-save";
+  saveNote.hidden = true;
+  saveNote.setAttribute("role", "status");
+
+  el.append(head, pvSlot, stateRow, transcript, tools, saveNote);
 
   const r = { el, tile, name, meta, ren, del, acc, pvSlot, pv: null,
               stateRow, tag, progWrap, fill, open: false,
-              transcript, tools, dlMd, dlTxt, dlWav,
+              transcript, tools, dlMd, dlTxt, dlWav, saveNote, saveT: null,
               doc: "", base: "", transcribe: false, loaded: false,
               tReady: false, tRetry: null,
               remove: null, delIdle: "ui.remove", delOn: "ui.confirmRemove",
               prev: {},
-              dispose() { clearTimeout(r.tRetry); if (r.pv) { disposePreview(r.pv); r.pv = null; } } };
+              dispose() { clearTimeout(r.tRetry); clearTimeout(r.saveT); if (r.pv) { disposePreview(r.pv); r.pv = null; } } };
 
   /* desplegar/plegar la transcripción (sin repintar: solo su visibilidad) */
   acc.addEventListener("click", () => {
@@ -2630,9 +2648,13 @@ function makeMediaCard() {
     }, 2600);
   });
 
-  /* descargas: navegación real a /download (Content-Disposition: attachment) */
+  /* Descargar = «Guardar como...» del backend. La ventana del panel es WebView2
+     incrustado y CANCELA en silencio las descargas por navegacion (medido en la
+     ventana real: el clic arranca la descarga, llegan los bytes enteros y el
+     motor la cancela; nada en disco y ningun aviso). Por eso el fichero lo
+     escribe la app donde el usuario elija y el panel enseña la ruta. */
   [dlMd, dlTxt, dlWav].forEach(b => b.addEventListener("click", () => {
-    if (r.base) downloadDoc(r.base, b.dataset.kind);
+    exportFile(r, r.base, b.dataset.kind, b);
   }));
 
   paintIcons(el);                       // los iconos de la tarjeta, una vez
@@ -2814,25 +2836,43 @@ function paintMedia() {
   if (cnt) { cnt.hidden = items.length === 0; cnt.textContent = String(items.length); }
 }
 
-/* Descarga REAL: navega a la URL de descarga; el servidor responde con
-   Content-Disposition: attachment, así que la página NO cambia (no es AJAX y no
-   abre pestañas nuevas). */
-function downloadURL(url) {
-  const a = document.createElement("a");
-  a.href = url;
-  a.setAttribute("download", "");
-  a.rel = "noopener";
-  a.style.display = "none";
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
+/* «Descargar» = «Guardar como...» NATIVO del backend. La ventana del panel es
+   WebView2 incrustado y CANCELA en silencio las descargas por navegación (un
+   <a download> arranca la descarga, llegan los bytes enteros y el motor la
+   cancela: nada en disco y ningún aviso — medido por CDP en la ventana real).
+   Por eso el fichero lo escribe la APP en la ruta que elija el usuario y el
+   panel enseña esa ruta: POST {action:"export", value:{name, kind}}.
+   `dest` es cualquier objeto con `saveNote` (el nodo de la nota) y `saveT`. */
+async function exportFile(dest, name, kind, btn) {
+  if (!dest || !name || dest.busy) return;
+  dest.busy = true;
+  if (btn) btn.setAttribute("aria-busy", "true");
+  showSaveNote(dest, t("ui.saveChoose"), "wait", 0);
+  const res = await send("export", { name, kind });
+  dest.busy = false;
+  if (btn) btn.removeAttribute("aria-busy");
+  if (res && res.ok === true && res.path) {
+    showSaveNote(dest, t("ui.saveDone") + " " + res.path, "ok", 12000, res.path);
+  } else if (res && res.ok === true && res.canceled) {
+    /* Cancelar NO es un fallo: se dice y se va solo, sin romper nada. */
+    showSaveNote(dest, t("ui.saveCancel"), "cancel", 4000);
+  } else {
+    showSaveNote(dest, t("ui.saveFail"), "err", 8000);
+  }
 }
 
-/* Descarga un documento por su NOMBRE BASE y su formato. El backend la sirve en
-   GET /download?doc=<base>&kind=md|wav|txt. */
-function downloadDoc(filename, kind) {
-  const base = stripExt(filename);
-  downloadURL(`/download?doc=${encodeURIComponent(base)}&kind=${encodeURIComponent(kind)}`);
+/* Nota de guardado: texto corto, y la ruta entera en el title. `hold` = 0 la
+   deja fija mientras el diálogo está abierto. */
+function showSaveNote(dest, msg, state, hold, full) {
+  const n = dest && dest.saveNote;
+  if (!n) return;
+  n.textContent = msg;
+  n.dataset.state = state;
+  n.hidden = false;
+  clearTimeout(dest.saveT);
+  dest.saveT = hold ? setTimeout(() => { n.hidden = true; }, hold) : null;
+  if (full) n.title = full;
+  else n.removeAttribute("title");
 }
 
 function showRenameError(r, msg) {
@@ -3712,7 +3752,10 @@ function wire() {
     const dd = $("#meetDone");
     if (btn.id === "btnMeetOpenDoc" && dd.dataset.doc) focusDocCard(dd.dataset.doc);
     else if (btn.id === "btnMeetDlWav" && dd.dataset.wav) {
-      downloadURL(`/audio?name=${encodeURIComponent(dd.dataset.wav)}&download=1`);
+      /* La grabación también se guarda con el diálogo nativo: la descarga por
+         navegación no escribe nada en la ventana de WebView2. */
+      meetSave.saveNote = meetSave.saveNote || $("#meetSaveNote");
+      exportFile(meetSave, dd.dataset.wav, "wav", btn);
     }
     else if (btn.id === "btnMeetDismiss") {
       // Tiene que olvidarlo el BACKEND: si solo se limpia aqui, el sondeo de

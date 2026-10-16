@@ -230,7 +230,7 @@ SERVER_LOG = os.path.join(SCRIPT_DIR, "whisper_server.log")
 # aqui sale `/state.version` (el panel la pinta como vX.Y.Z) y el log de
 # arranque. El comparador de actualizaciones tambien la usa. `APP_VERSION` se
 # conserva como alias por compatibilidad.
-VERSION = "1.0.6"
+VERSION = "1.0.7"
 APP_VERSION = VERSION
 WHISPER_EXE = os.path.join(RESOURCE_DIR, "whisper_bin", "Release", "whisper-cli.exe")
 # Motores GPU: cada backend vive en su carpeta con su whisper-server + DLLs.
@@ -3855,6 +3855,203 @@ class MeetingTranscriber:
         self._stop_evt = None
 
 
+# ------------------------------------------- exportar (Guardar como...)
+# El panel NO puede bajar ficheros por navegacion. La ventana del panel es un
+# WebView2 incrustado (pywebview) y su anfitrion NO gestiona DownloadStarting:
+# el clic del usuario arranca la descarga, el motor recibe los bytes enteros y
+# la CANCELA en silencio (medido por CDP en la ventana real: Page.downloadWillBegin
+# -> Page.downloadProgress (receivedBytes = totalBytes) -> state "canceled", sin
+# dialogo, sin fichero y sin ningun error). En Chrome eso mismo guarda el
+# fichero y por eso la verificacion anterior «pasaba». Asi que «descargar» en el
+# panel es una ACCION DEL BACKEND: dialogo NATIVO de Windows (Guardar como...)
+# y el fichero lo escribe la app en la ruta que el usuario elija.
+_OFN_EXPLORER = 0x00080000
+_OFN_OVERWRITEPROMPT = 0x00000002
+_OFN_PATHMUSTEXIST = 0x00000800
+_OFN_NOCHANGEDIR = 0x00000008
+_OFN_HIDEREADONLY = 0x00000004
+_OFN_DONTADDTORECENT = 0x02000000
+
+
+class _OPENFILENAMEW(ctypes.Structure):
+    """OPENFILENAMEW de comdlg32 (el dialogo del sistema)."""
+    _fields_ = [
+        ("lStructSize", wintypes.DWORD),
+        ("hwndOwner", wintypes.HWND),
+        ("hInstance", wintypes.HINSTANCE),
+        ("lpstrFilter", wintypes.LPCWSTR),
+        ("lpstrCustomFilter", wintypes.LPWSTR),
+        ("nMaxCustFilter", wintypes.DWORD),
+        ("nFilterIndex", wintypes.DWORD),
+        ("lpstrFile", wintypes.LPWSTR),
+        ("nMaxFile", wintypes.DWORD),
+        ("lpstrFileTitle", wintypes.LPWSTR),
+        ("nMaxFileTitle", wintypes.DWORD),
+        ("lpstrInitialDir", wintypes.LPCWSTR),
+        ("lpstrTitle", wintypes.LPCWSTR),
+        ("Flags", wintypes.DWORD),
+        ("nFileOffset", wintypes.WORD),
+        ("nFileExtension", wintypes.WORD),
+        ("lpstrDefExt", wintypes.LPCWSTR),
+        ("lCustData", ctypes.c_void_p),
+        ("lpfnHook", ctypes.c_void_p),
+        ("lpTemplateName", wintypes.LPCWSTR),
+        ("pvReserved", ctypes.c_void_p),
+        ("dwReserved", wintypes.DWORD),
+        ("FlagsEx", wintypes.DWORD),
+    ]
+
+
+_EXPORT_EXTS = (".md", ".txt", ".wav")
+
+
+def _export_source(name, kind):
+    """Origen y nombre de salida de lo que se exporta.
+
+    Misma resolucion que GET /download: md/txt -> textos/<base>.md,
+    wav -> audios/<base>.wav. Devuelve (origen, nombre_salida) o (None, motivo).
+
+    OJO: la extension se quita solo si es una de las conocidas. Con
+    `os.path.splitext` un nombre con punto propio se partia por el ULTIMO punto
+    («¿Cuanto costaria correr Claude Opus 5.5 en Local.md» -> base «…Opus 5»),
+    y ni el guardado ni /download encontraban el fichero.
+    """
+    base = str(name or "").strip()
+    if (not base or base in (".", "..") or ".." in base or "/" in base
+            or "\\" in base or os.path.basename(base) != base):
+        return None, "bad doc"
+    kind = str(kind or "").strip().lower()
+    if kind not in ("md", "txt", "wav"):
+        return None, "bad kind"
+    low = base.lower()
+    for ext in _EXPORT_EXTS:
+        if low.endswith(ext):
+            base = base[:-len(ext)]
+            break
+    if kind == "wav":
+        return os.path.join(AUDIOS_DIR, base + ".wav"), base + ".wav"
+    if kind == "txt":
+        return os.path.join(DOCS_DIR, base + ".md"), base + ".txt"
+    return os.path.join(DOCS_DIR, base + ".md"), base + ".md"
+
+
+def _export_ctype(out_name):
+    """Tipo real del fichero exportado (por su extension de salida)."""
+    ext = os.path.splitext(str(out_name))[1].lower()
+    if ext == ".wav":
+        return "audio/wav"
+    if ext == ".txt":
+        return "text/plain; charset=utf-8"
+    return "text/markdown; charset=utf-8"
+
+
+def _save_as_dialog(default_name, owner=0):
+    """Dialogo nativo «Guardar como...» de Windows.
+
+    Devuelve la ruta elegida o None si se cancela (cancelar NO es un error).
+    Se apoya en comdlg32, el mismo dialogo del sistema: el anfitrion de
+    WebView2 no puede enseñarlo por su cuenta, y por eso el backend lo abre
+    aqui, con la propia ventana del panel como dueña.
+    """
+    try:
+        comdlg = ctypes.windll.comdlg32
+        comdlg.GetSaveFileNameW.argtypes = [ctypes.POINTER(_OPENFILENAMEW)]
+        comdlg.GetSaveFileNameW.restype = wintypes.BOOL
+        comdlg.CommDlgExtendedError.restype = wintypes.DWORD
+    except Exception as e:
+        log(f"Guardar como: sin dialogo del sistema ({e}).")
+        return None
+    ext = (os.path.splitext(str(default_name))[1].lstrip(".").lower()
+           or "txt")
+    es = str(getattr(app, "language", "es") or "es").lower() != "en"
+    desc = {"md": ("Documento Markdown", "Markdown document"),
+            "txt": ("Texto", "Text"),
+            "wav": ("Audio WAV", "WAV audio")}.get(
+                ext, ("Fichero", "File"))[0 if es else 1]
+    todos = "Todos los ficheros (*.*)" if es else "All files (*.*)"
+    # El filtro lleva una descripcion y su patron, y termina en doble NUL.
+    filtro = f"{desc} (*.{ext})\0*.{ext}\0{todos}\0*.*\0\0"
+    titulo = "Guardar como" if es else "Save as"
+    inicio = os.path.join(os.path.expanduser("~"), "Downloads")
+    if not os.path.isdir(inicio):
+        inicio = os.path.expanduser("~")
+    buf = ctypes.create_unicode_buffer(1024)
+    buf.value = str(default_name)
+    ofn = _OPENFILENAMEW()
+    ofn.lStructSize = ctypes.sizeof(_OPENFILENAMEW)
+    ofn.hwndOwner = wintypes.HWND(int(owner or 0))
+    ofn.lpstrFilter = filtro
+    ofn.nFilterIndex = 1
+    ofn.lpstrFile = ctypes.cast(buf, wintypes.LPWSTR)
+    ofn.nMaxFile = len(buf)
+    ofn.lpstrInitialDir = inicio
+    ofn.lpstrTitle = titulo
+    ofn.lpstrDefExt = ext
+    ofn.Flags = (_OFN_EXPLORER | _OFN_OVERWRITEPROMPT | _OFN_PATHMUSTEXIST
+                 | _OFN_NOCHANGEDIR | _OFN_HIDEREADONLY
+                 | _OFN_DONTADDTORECENT)
+    ole = ctypes.windll.ole32
+    hr = ole.CoInitializeEx(None, 0x2)          # APARTMENTTHREADED
+    try:
+        ok = bool(comdlg.GetSaveFileNameW(ctypes.byref(ofn)))
+    finally:
+        # 0/1 = lo inicializamos nosotros; S_FALSE no exige desinicializar
+        # dos veces, asi que solo se suelta el que es nuestro.
+        if hr == 0:
+            ole.CoUninitialize()
+    if not ok:
+        err = int(comdlg.CommDlgExtendedError())
+        if err:
+            log(f"Guardar como: el dialogo fallo ({err:#x}).")
+        return None
+    return buf.value or None
+
+
+def _export_save(name, kind, owner=0):
+    """Guarda una copia con «Guardar como...» y confirma la ruta elegida.
+
+    Devuelve el JSON que el panel enseña: {ok, path, bytes} al guardar,
+    {ok: True, canceled: True} si el usuario cancela (no rompe nada ni da
+    error) y {ok: False, error} si no se pudo.
+    """
+    src, out_name = _export_source(name, kind)
+    if src is None:
+        log(f"Guardar como: nombre o formato no validos ({name!r}, {kind!r}).")
+        return {"ok": False, "error": out_name}
+    if not os.path.isfile(src):
+        log(f"Guardar como: no existe {src}.")
+        return {"ok": False, "error": "missing",
+                "file": os.path.basename(src)}
+    dest = _save_as_dialog(out_name, owner=owner)
+    if not dest:
+        log(f"Guardar como: cancelado ({out_name}).")
+        return {"ok": True, "canceled": True}
+    try:
+        # Primero se lee ENTERO y luego se escribe: si el usuario elige la
+        # misma ruta que el original, el fichero no se trunca a medias.
+        with open(src, "rb") as fh:
+            raw = fh.read()
+        with open(dest, "wb") as fh:
+            fh.write(raw)
+    except Exception as e:
+        log(f"Guardar como: no se pudo escribir en {dest} ({e}).")
+        return {"ok": False, "error": str(e)}
+    log(f"Guardar como: {out_name} -> {dest} ({len(raw)} bytes).")
+    return {"ok": True, "path": dest, "bytes": len(raw),
+            "file": os.path.basename(dest)}
+
+
+def _export_owner():
+    """Ventana del panel para que el dialogo salga encima de ella (o 0)."""
+    try:
+        hwnd = int(getattr(_panel_host, "hwnd", 0) or 0)
+    except Exception:
+        hwnd = 0
+    if hwnd and not _user32.IsWindow(wintypes.HWND(hwnd)):
+        hwnd = 0
+    return hwnd
+
+
 # ------------------------------------------------------------ estado
 class ControlServer:
     """Servidor local del panel de ajustes.
@@ -4111,28 +4308,14 @@ class ControlServer:
                     import urllib.parse
                     qs = urllib.parse.parse_qs(
                         urllib.parse.urlparse(self.path).query)
-                    base = (qs.get("doc") or [""])[0].strip()
-                    kind = (qs.get("kind") or ["md"])[0].strip().lower()
-                    if (not base or base in (".", "..") or ".." in base
-                            or "/" in base or "\\" in base
-                            or os.path.basename(base) != base):
-                        self._send(400, b'{"error":"bad doc"}')
+                    target, down = _export_source(
+                        (qs.get("doc") or [""])[0],
+                        (qs.get("kind") or ["md"])[0])
+                    if target is None:
+                        self._send(400, json.dumps(
+                            {"error": down}).encode("utf-8"))
                         return
-                    base = os.path.splitext(base)[0]      # sin extensión
-                    if kind == "wav":
-                        target = os.path.join(AUDIOS_DIR, base + ".wav")
-                        ctype, down = "audio/wav", base + ".wav"
-                    elif kind == "txt":
-                        target = os.path.join(DOCS_DIR, base + ".md")
-                        ctype, down = ("text/plain; charset=utf-8",
-                                       base + ".txt")
-                    elif kind == "md":
-                        target = os.path.join(DOCS_DIR, base + ".md")
-                        ctype, down = ("text/markdown; charset=utf-8",
-                                       base + ".md")
-                    else:
-                        self._send(400, b'{"error":"bad kind"}')
-                        return
+                    ctype = _export_ctype(down)
                     try:
                         with open(target, "rb") as fh:
                             raw = fh.read()
@@ -4310,6 +4493,24 @@ class ControlServer:
                     except Exception as e:
                         self._send(500, json.dumps(
                             {"error": str(e)}).encode("utf-8"))
+                    return
+                if action == "export":
+                    # «Descargar» del panel: lo guarda el BACKEND con el
+                    # dialogo nativo «Guardar como...» (WebView2 cancela en
+                    # silencio las descargas por navegacion; ver el bloque de
+                    # _export_save). value = {name|doc, kind: md|txt|wav}.
+                    try:
+                        val = msg.get("value") or {}
+                        if not isinstance(val, dict):
+                            val = {}
+                        res = _export_save(val.get("name") or val.get("doc"),
+                                           val.get("kind"),
+                                           owner=_export_owner())
+                        self._send(200, json.dumps(res).encode("utf-8"))
+                    except Exception as e:
+                        log(f"Guardar como: fallo inesperado ({e}).")
+                        self._send(500, json.dumps(
+                            {"ok": False, "error": str(e)}).encode("utf-8"))
                     return
                 if action == "meeting":
                     try:

@@ -3742,3 +3742,266 @@ elevar), `GET /state` **200** con `version="1.0.6"`, motor Vulkan y modelo `turb
 Los ficheros de prueba de esta verificación viven en `.tmp/clean106` (instalación
 limpia de pruebas): **no se tocó nada del autor** —ni sus audios, ni sus
 documentos, ni la configuración del proyecto— y su portapapeles se restauró.
+
+---
+
+## 67. Los botones `.md` / `.txt` / `.wav` de las tarjetas no hacían NADA en la ventana real: WebView2 CANCELA la descarga en silencio; ahora el fichero lo guarda el BACKEND con el diálogo nativo «Guardar como...»
+
+**Problema reportado:** *«los botones de .md, .txt, .wav de las transcripciones no
+funcionan, no hacen nada al presionarlos»* — en la ventana real de la app.
+
+**Diagnóstico MEDIDO en la ventana real (no en Chrome headless).** La ventana del
+panel es WebView2 incrustado (pywebview) con puerto de depuración
+(`DICTA_WEBVIEW_DEBUG_PORT=9333`). Pulsando cada botón con un **clic de verdad**
+(`Input.dispatchMouseEvent` sobre el rect del botón) y escuchando los eventos de
+descarga del motor:
+
+| botón | `Page.downloadWillBegin` | bytes | estado final | fichero en disco |
+| --- | --- | --- | --- | --- |
+| `.md` | `reunion-20261016-135838.md` | 763 / 763 | **`canceled`** | no |
+| `.txt` | `reunion-20261016-135838.txt` | 763 / 763 | **`canceled`** | no |
+| `.wav` | `reunion-20261016-135838.wav` | 6.192.044 / 6.192.044 | **`canceled`** | no |
+
+El clic SÍ llega al manejador (se ve el `<a download>` con su
+`/download?doc=…&kind=…`), el motor RECIBE la respuesta entera y la **cancela**:
+ni diálogo, ni fichero, ni error. La carpeta Descargas quedó igual
+(**30 → 30** entradas) y no apareció ninguna excepción de consola. **Por eso la
+verificación anterior «pasaba»**: se comprobaba `GET /download` = 200 con
+`Content-Disposition: attachment` en un Chrome headless, y **en Chrome eso
+guarda el fichero**; el que decide aquí es WebView2. Causa: pywebview **no
+gestiona `DownloadStarting`** (0 referencias a *download* en
+`webview/platforms/winforms.py`), así que la descarga no tiene destino y el motor
+la tira.
+
+**Segundo fallo encontrado al probar con un nombre real:** el resolvedor partía
+el nombre por el ÚLTIMO punto (`os.path.splitext`), así que
+`¿Cuánto costaría correr Claude Opus 5.5 en Local.md` daba base
+`¿Cuánto costaría correr Claude Opus 5` → el guardado (y `GET /download`, que
+ahora comparte resolvedor) devolvían `missing` / **404** con documentos de nombre
+con punto. Se quita la extensión **solo si es una de las conocidas** (`.md`,
+`.txt`, `.wav`).
+
+**Solución elegida: acción del backend + diálogo NATIVO «Guardar como...».** Es lo
+que un usuario espera al pulsar descargar en una app de escritorio, y es
+independiente del motor de la ventana (Chrome también lo usa: un solo
+comportamiento). El panel manda
+`POST {action:"export", value:{name, kind:md|txt|wav}}`; el backend abre el
+diálogo del sistema (`comdlg32.GetSaveFileNameW`, con la ventana del panel como
+dueña, carpeta inicial Descargas, `lpstrDefExt` y aviso de sobrescritura), escribe
+el fichero **él mismo** y responde `{ok, path, bytes}`. El panel enseña bajo los
+botones una línea corta con la ruta elegida (`Guardado en C:\…`), o
+`Guardado cancelado` si se cancela —cancelar NO es un error—, o `No se pudo
+guardar`. El botón mantiene su etiqueta y su `aria-label`, y lleva `aria-busy`
+mientras el diálogo está abierto. El botón de descarga de la **grabación de
+reunión** va por el mismo carril. La nota es `hidden` por defecto: **0 px** de
+alto mientras no se usa (la carta mide **129 px** sin nota y **150** con ella).
+
+**Verificación (toda en la VENTANA REAL, con clic real y capturas).**
+
+| botón | ruta escrita | bytes | comprobación de contenido |
+| --- | --- | --- | --- |
+| `.md` | `.tmp\proof\out1\reunion-20261016-135838.md` | **763** | md5 `fa30c19d…` = al original |
+| `.txt` | `.tmp\proof\out1\reunion-20261016-135838.txt` | **763** | mismo texto de la transcripción |
+| `.wav` | `.tmp\proof\out1\reunion-20261016-135838.wav` | **6.192.044** | md5 `1999960f…` = al audio; cabecera `RIFF…WAVE fmt` con **PCM, 2 canales, 48000 Hz** |
+| `.md` (nombre con acentos y punto) | `.tmp\proof\dk3\¿Cuánto costaría correr Claude Opus 5.5 en Local.md` | **16.743** | md5 `425c17d0…` = al documento |
+
+- **El diálogo sale de verdad**: captura `.tmp\proof\p6_1_oscuro_dialogo.png`
+  (ventana `#32770`, título `Guardar como`, tipo `Documento Markdown (*.md)`) y
+  `p6_1_oscuro_ruta.png` con la ruta completa en el campo de nombre (el texto se
+  leyó con `WM_GETTEXT`: **coincide carácter a carácter**).
+- **Cancelar no rompe nada**: con `Escape`/`IDCANCEL` el panel dice
+  `Guardado cancelado`, **0 ficheros nuevos**, `aria-busy` a 0 y **0
+  excepciones**; en `dicta.log` queda `Guardar como: cancelado (…)`.
+- **Dos temas**: nota en el verde del token de cada tema —oscuro `rgb(48,209,88)`,
+  claro `rgb(46,125,50)`—, mono 11 px, capturas `panel_oscuro_nota.png` y
+  `panel_claro_nota.png`; el tema del autor se dejó en **`light`**
+  (`dicta_config.json`).
+- **0 errores de consola** (`Runtime.exceptionThrown`) en las **10 pulsaciones**
+  repartidas en los lotes.
+- **Nada roto alrededor** (DOM de la ventana real): **2 cartas** = una por audio
+  (dedupe por raíz de nombre); acordeón (`aria-expanded` alterna, **724**
+  caracteres de transcripción, carta 129 → **496 px** y vuelta); reproducción
+  fluida (con `volume=0`, el reproductor avanza **1,38 s en 1,4 s**, `00:01 /
+  00:32`, estado `playing`); estado de progreso con fixture
+  (`Transcribiendo… 42%`, barra al **42 %**); medidor de entrada (**40** barras,
+  fixture `rms=0,4` → **36** barras encendidas, estado `voice`, `-38 dB`, la
+  barra horizontal retirada sigue retirada); barra de espera (**160×26** en
+  `(755,420)`, valor `1,0 s` intacto, **0 marcas**); botón de apagar (fondo
+  `rgba(0,0,0,0)`, borde `0px`, icono `rgb(215,0,21)`, `aria="Salir"`, sin
+  pulsarlo); **8** tiras de redimensionado (`fixed`, 6 px) y **mínimo de ventana
+  clavado en 800×520** (pedido 600×400 → 800×520; pedido 1000×700 → 1000×700;
+  ventana restaurada a su 1024×781).
+- Se probó con la app **elevada (pid 17380)** y **sin elevar (pid 1900)**: el
+  guardado funciona igual en los dos casos (el backend escribe el fichero, no
+  hace falta ningún permiso extra).
+
+**Ficheros:** `dicta.py` (bloque «exportar»: `_export_source`, `_export_ctype`,
+`_save_as_dialog`, `_export_save`, `_export_owner`; la acción `export` en
+`do_POST`; `GET /download` pasa a usar el mismo resolvedor),
+`panel/app.js` (`exportFile`/`showSaveNote`, nota `.d-save` en la carta, botón de
+la grabación, 4 claves i18n en ES y EN), `panel/style.css` (`.d-save`),
+`panel/index.html` (`#meetSaveNote`), `CHANGES.md`.
+
+**Límite honesto:** el diálogo nativo lo abre el proceso de dicta; con la ventana
+del panel en primer plano sale encima de ella, pero si el autor está en otra
+aplicación Windows puede pedir el foco (es lo normal en un «Guardar como...»).
+Si `comdlg32` no estuviera disponible, la acción devuelve `ok:false` y el panel
+dice `No se pudo guardar` en vez de fingir que guardó.
+
+
+## 68. Reempaquetado portable 1.0.7: el guardado del panel va DENTRO del `.exe` (diálogo nativo «Guardar como» verificado en el congelado)
+
+**Objetivo.** Recompilar el ejecutable portable con el código ya terminado de esta
+tanda (`dicta.py`, `panel/*`) y dejar listo
+`dist/dicta-portable-1.0.7-windows-x64.zip`. Sin publicar nada.
+
+**Cambios:**
+
+- **`dicta.py`:** SÓLO la versión — `VERSION = "1.0.6"` → `"1.0.7"` (línea 233).
+  Nada más. `GET /state` publica `version="1.0.7"`.
+- **`dicta.spec` / `build_exe.bat`:** sin cambios (la receta que ya funcionaba).
+- **No se tocó** `panel/*`, `dicta_ui.py`, `dicta_icon.py`, `README.md`,
+  `CHANGELOG.md`. Nada publicado ni subido.
+
+**Build:** `./.venv/Scripts/python.exe -m PyInstaller --noconfirm --clean
+dicta.spec` → **rc=0 en 30,7 s**. `uac_admin=False`
+(`requestedExecutionLevel level="asInvoker" uiAccess="false"`, `requireAdministrator`
+= 0 ocurrencias), `console=False`. `dist/dicta` = `dicta.exe` (7.782.535 B) +
+`dicta.exe.config` (1.192 B, en la RAÍZ: TOC `EXECUTABLE` del spec) + `_internal/` +
+`models/ggml-small-q5_1.bin` (190.085.487 B). **Una sola copia de `panel/`**
+(`find dist/dicta -type d -name panel` → sólo `_internal/panel/`). Total 392 MB.
+
+### 68.1 (a) Arranque del `.exe` desde carpeta LIMPIA y con entorno saneado
+
+Copia limpia en `.tmp/clean107` (sin config, sin logs, sin datos), lanzada con
+`PYTHONPATH`, `VIRTUAL_ENV` y `PYTHONHOME` **vaciados** y
+`DICTA_WEBVIEW_DEBUG_PORT=9333`:
+
+- `GET /state` → **200** con `version="1.0.7"`, `engine=auto` resuelto
+  `vulkan`, `model=small`.
+- **La ventana es WebView2 de verdad**: `http://127.0.0.1:9333/json/version` →
+  `Edg/155.0.4283.45`. En el log: `Panel: backend WebView2 (pywebview) — ventana sin
+  marco, barra integrada en la página.` y `Panel abierto (WebView2, sin barra
+  nativa): http://127.0.0.1:47810/panel`.
+- `dicta 1.0.7 listo — alt+q, modo toggle, idioma es, cancelar alt+e (elevado: no)`;
+  `Motor GPU (Vulkan) listo (auto (dispositivo 0))`. `dicta_crash.log` = **0 bytes**.
+
+### 68.2 (a bis) El arreglo del guardado DENTRO del congelado: el diálogo nativo «Guardar como» aparece
+
+Pulsando el botón **`.md`** de una carta **CON TRANSCRIPCIÓN**, en la ventana real
+del `.exe` (WebView2, por CDP sobre el puerto 9333) y vigilando la ventana por
+`EnumWindows` (pid del `.exe`):
+
+- `DIALOGS_BEFORE []` → clic `.md` → **`DIALOG_FOUND True`**,
+  `class=#32770`, `title="Guardar como"`, con sus dos `Edit` hijos.
+- Cancelado por mensajes (`PostMessageW(dlg, WM_COMMAND, IDCANCEL)`), **sin robar
+  el teclado**: `DIALOGS_AFTER_CANCEL []`. El panel enseña **«Guardado cancelado»**
+  y en `dicta.log` queda `Guardar como: cancelado (prueba-transcripcion-107.md)`;
+  **0 ficheros escritos**.
+
+Es la comprobación que caza el fallo de la 1.0.6 (el botón no hacía nada en
+WebView2): en el congelado la acción `export` llega al backend y este abre el
+diálogo nativo.
+
+### 68.3 (b) Transcripción REAL de punta a punta y UNA sola carta en el panel del congelado
+
+Subida real por `POST /upload` (multipart, `prueba-transcripcion-107.wav`,
+6.192.044 B, 0:32) a la instancia congelada:
+
+- Estado recorrido **completo**: `pendiente` (respuesta del POST, 0,02 s) →
+  `transcribiendo` (99 %) → **`listo` (100 %) en ~1,0 s** ≈ 32× tiempo real
+  (modelo `small`, Vulkan). Documento: `textos/prueba-transcripcion-107.md`,
+  **748 B**, con texto real (empieza «Buenos días, esta es una prueba de
+  transcripción…»).
+- **Panel del `.exe` congelado, por CDP sobre su WebView2**: **`n_cards = 1`** —
+  una sola carta (`prueba-transcripcion-107.wav`, `5.9 MB · 0:00:32`), sin la
+  segunda carta del `.md`.
+- **El acordeón abre**: `aria-expanded` `false → true` con el bloque
+  `.m-transcript` pasando de **0 px a 359,25 px** con el texto dentro.
+
+### 68.4 (c) Cierre limpio
+
+`POST {"action":"quit"}` → `{"ok": true}` (HTTP 200). Después: `/state` deja de
+responder, **0 procesos** (`dicta.exe`, `whisper-server.exe` y los seis
+`msedgewebview2.exe`), puertos **47810 / 47801 / 9333 libres**, **VRAM dedicada
+2597 → 1967 MB** (el modelo `small` liberado). En el log:
+`Cierre limpio (salida): liberando GPU y parando servicios...` y
+`Cierre limpio: GPU liberada y sin procesos whisper vivos.`
+
+### 68.5 (d) Pegado automático desde el `.exe` congelado — LÍMITE HONESTO: no se forzó
+
+No se cerró el ciclo y se dice por qué: **el primer plano era la propia app
+Hermes** (`Chrome_WidgetWin_1`, pid 5204), y el carril de entrega apunta a
+`app.target_hwnd or GetForegroundWindow()`. Dispararlo habría **tecleado el texto
+de prueba dentro del orquestador** (como ya pasó con Brave en la tanda de la
+1.0.6). El brief prohíbe explícitamente robar el foco para forzarlo, así que **no
+se pulsó el carril de entrega**.
+
+**Evidencia parcial (código en el bundle):** extrayendo el módulo `dicta` del
+propio `dicta.exe` (CArchive → `marshal`) están las funciones del mecanismo de
+pegado: `fallback_paste`, `_paste_mode`, `_es_ventana_propia`, `start_delivery`,
+`_forzar_primer_plano`, `_post_paste`, `_uia_insert_text`. El código viaja en el
+paquete; lo que no se pudo hacer sin foco ajeno es **ejercitarlo de punta a
+punta**.
+
+### 68.6 (e) ZIP: contenido, integridad y ausencia de datos del usuario
+
+`dist/dicta-portable-1.0.7-windows-x64.zip` — **261.473.037 B**,
+`sha256 7c946cfde968013a7be4bf5188bf6a7017ffe7171a693d64d31da6a0888480ef`, **1.077
+entradas**, **`testzip` OK (None)**, raíces exactamente
+`dicta.exe`, `dicta.exe.config`, `_internal/` y `models/`
+(`models/ggml-small-q5_1.bin` dentro, 190.085.487 B). **Cero ficheros de datos del
+usuario**: se rastreó por patrón antes de comprimir y sobre la lista de entradas
+del ZIP (`audios/`, `textos/`, `uploads/`, `.tmp/`, `dicta.log`,
+`whisper_server.log`, `update.log`, `dicta_crash.log`, `dicta_config.json`,
+`uploads.json`) → **0**. Los ZIP anteriores no se tocaron.
+
+### 68.7 (f) El AYUDANTE del paquete sigue siendo el NUEVO
+
+Volcado desde el propio `.exe` (CArchive → `marshal` → módulo `dicta` →
+`_helper_script`), sin aplicarlo (`.tmp/helper_dump_107.cmd`): **50 líneas**,
+**1.905 B**, **11 pasos** escritos en `update.log`, espera por **PID** con
+`tasklist /FI "PID eq %APPPID%" /FO CSV /NH` y fichero `pid_check.txt` (no un
+`findstr` de subcadena), `robocopy "%SRC%" "%DST%" /E /NFL /NDL /NJH /NJS /NP /R:3
+/W:2 /XF dicta_config.json update.log dicta.log dicta_crash.log`, relanzado del
+`.exe` al terminar (`start "" "%EXE%"`), limpieza de `.tmp` y rama de error
+`:app_alive` si la app sigue viva. `_spawn_helper` con
+`CREATE_BREAKAWAY_FROM_JOB` presente en el bundle.
+
+### 68.8 (g) Comprobación de versiones: consulta a GitHub y NO se anuncia a sí misma
+
+Con `check_updates=true` (real en `/state`, no un campo derivado), el `.exe`
+congelado consulta la API pública de releases al arrancar
+(`Actualizaciones: ultima 1.0.6 (ya al dia)` en el log) y la comprobación
+**forzada** (`{"action":"check_update","value":{"force":true}}`) repite por red:
+`ok=true`, `force=true`, `enabled=true`, `latest="1.0.6"`, **`available=false`**,
+`checked_at="2026-10-16 17:09:07"`, `error=""`. Con la 1.0.7 instalada no se ofrece
+a sí misma ninguna actualización.
+
+### 68.9 (h) `panel/` dentro del paquete idéntico a disco (md5)
+
+| fichero | md5 |
+| --- | --- |
+| `index.html` | `470072260fe8868cdd5af10a7e3879d7` |
+| `app.js` | `947c3a061808494d6790d749643d78eb` |
+| `style.css` | `e97b041b59ab5a41a9bb816576171908` |
+| `desktop.js` | `30b963c5a2654899c54ae2d83ee91c1a` |
+
+Coinciden **disco = `dist/dicta/_internal/panel/` = dentro del ZIP**: la copia del
+panel es la de esta tanda (es lo que caza un ZIP con el panel anterior).
+
+### 68.10 Limpieza y estado final
+
+Antes de probar se mataron las instancias sueltas (los dos `pythonw.exe` que
+ejecutaban `dicta.py` —uno del venv y otro de `.dsh\dsh-runtimes`—, el
+`whisper-server.exe` con el modelo en VRAM y sus seis `msedgewebview2.exe`
+hijos). **Ningún `chrome --headless` ocupaba el 9333**, así que la comprobación de
+WebView2 no salió falseada. Al terminar queda **UNA sola instancia viva**: la app
+de desarrollo desde el proyecto (`.venv\Scripts\pythonw.exe dicta.py`, sin
+elevar), `GET /state` **200** con `version="1.0.7"`, motor Vulkan y modelo `small`,
+`dicta_crash.log` **0 bytes**. **No se tocó nada del autor**: ni sus audios, ni sus
+documentos, ni su configuración (`dicta_config.json` intacta: `theme=light`,
+`engine=vulkan`, `check_updates=true`, `gpu_device=auto`); los ficheros de prueba
+de esta verificación viven en `.tmp/clean107`.
+
+---
