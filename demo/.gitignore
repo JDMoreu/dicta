@@ -1,0 +1,7 @@
+# El vídeo de la demo no se versiona: pesa demasiado para el repo.
+# Se adjunta como asset de la release v1.0.7.
+#   gh release upload v1.0.7 demo/Dicta_demo.mp4
+*.mp4
+*.mov
+*.mkv
+*.webm

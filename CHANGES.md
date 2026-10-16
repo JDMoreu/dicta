@@ -4005,3 +4005,14 @@ documentos, ni su configuración (`dicta_config.json` intacta: `theme=light`,
 de esta verificación viven en `.tmp/clean107`.
 
 ---
+
+## 69. Demo en vídeo: GIF en el README y vídeo en la release
+
+**Petición del autor:** subir la demo al repo como GIF en el README y no perder el vídeo completo.
+
+- `demo/Dicta_demo.mp4` (9.756.354 B, 1920x1080, 30 fps, 65,77 s) queda **adjunto a la release v1.0.7** como asset, no en el repo (`demo/.gitignore` bloquea `*.mp4`).
+- `demo/dicta-demo.gif`: **1.183.918 B**, 1000x702, **150 fotogramas**, 14,29 fps, **10,5 s**. Tramo **24,5-35,0 s** del vídeo (se añade un audio, la barra pasa de `Transcribiendo...` al resultado y el panel despliega la transcripción), recortado a la ventana real (x 295-1625, y 76-1006) y optimizado con `palettegen` (256 colores, `stats_mode=diff`) + `paletteuse` (sierra2_4a, `diff_mode=rectangle`). El tramo se eligió mirando fotogramas extraídos cada 2-4 s con ffmpeg y descartando los tramos de ajustes o de pantalla sin contenido.
+- `demo/panel-dictado.png` y `demo/panel-reunion.png`: dos fotogramas reales del vídeo (t=8 s y t=20 s, recortados a la ventana) como capturas del panel.
+- README reescrito en formato breve: badges (release, Windows, MIT), el GIF arriba del todo, qué hace, cómo se usa el portable, notas honestas (ventanas elevadas y UAC, Chrome/Edge para el panel, iconos ocultos en Windows 11), ajustes, motor, privacidad, compilar y arquitectura resumida.
+
+**Validación:** el GIF se releyó con Pillow (150 fotogramas de 70 ms, 10.500 ms en total, 251 colores); la ruta del README coincide carácter a carácter con el fichero subido (`demo/dicta-demo.gif`) y su URL cruda responde 200; `Dicta_demo.mp4` aparece en `gh release view v1.0.7` junto al portable 1.0.7 y la release sigue siendo Latest.
