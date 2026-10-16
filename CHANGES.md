@@ -297,7 +297,7 @@ instancia)` — el propio registro lo recoge dos veces (10:41:35 y 10:42:18).
 **Cambios:** al arrancar se encola `open_panel` (el panel es la cara visible de
 la app). Si ya hay instancia, `_wake_running_instance()` le pide por HTTP
 `{"action": "open_panel"}` —recorriendo el rango de puertos y comprobando con
-`/state` que quien responde es dicta, para no escribirle a otro programa— y
+`/state` que quien responde es Dicta, para no escribirle a otro programa— y
 `_panel_rpc` lo aplica. `--no-panel` lo desactiva.
 
 **Validación:** con otra instancia viva, relanzar imprime «dicta ya estaba
@@ -318,10 +318,10 @@ título único deja de servir en cuanto la ventana se renombra.
 
 ## 21. Paneles acumulados de instancias muertas
 
-**Diagnóstico:** si dicta muere de golpe, su Chrome sobrevive. Como el perfil es
+**Diagnóstico:** si Dicta muere de golpe, su Chrome sobrevive. Como el perfil es
 el mismo, al abrir el panel otra vez Chrome **reutiliza ese proceso** y aparece
 una ventana más: se midieron dos a la vez, una `dicta` y otra `dicta-panel-…`.
-Limpiar por título no sirve, porque el dicta anterior ya se había renombrado.
+Limpiar por título no sirve, porque el Dicta anterior ya se había renombrado.
 
 **Cambios:** `_clear_stale_panel(profile_dir)` mata los procesos de navegador
 cuyo `CommandLine` lleva el perfil del panel (exclusivo suyo) antes de abrir uno
@@ -338,8 +338,8 @@ notch se ancla a la esquina por defecto en vez de a las coordenadas (0, 0).
 
 ## Nota sobre el icono de la bandeja (no es un fallo de Dicta)
 
-En `HKCU\Control Panel\NotifyIconSettings` hay tres entradas de dicta —una de
-ellas del ejecutable de un dicta ANTIGUO en `Documents\Voice to text\dicta\
+En `HKCU\Control Panel\NotifyIconSettings` hay tres entradas de Dicta —una de
+ellas del ejecutable de un Dicta ANTIGUO en `Documents\Voice to text\dicta\
 dist\`— y **ninguna con `IsPromoted`**: Windows 11 las deja en el desplegable
 de la flechita. Para tenerlo a la vista: **Configuración → Personalización →
 Barra de tareas → Otros iconos de la bandeja del sistema → dicta**.
@@ -452,7 +452,7 @@ Windows no admite en un nombre de fichero y numera si ya existe.
 *Validación:* subiendo `reunion miercoles.flac` el documento sale
 **`reunion miercoles.md`** (antes: `audio-<uuid>.md`).
 
-**Icono de bandeja promocionado.** Las tres entradas de dicta en
+**Icono de bandeja promocionado.** Las tres entradas de Dicta en
 `HKCU\Control Panel\NotifyIconSettings` tenían `IsPromoted` vacío (Windows 11
 las esconde); ahora valen 1.
 
@@ -533,7 +533,7 @@ entrega fuerza ese destino. La primera versión del arreglo no servía:
 título como red: Chrome le pisa el título único) y la isla por clase. En la
 entrega:
 
-1. Si la ventana que el usuario mira ahora no es de dicta, se pega **ahí** (cambió
+1. Si la ventana que el usuario mira ahora no es de Dicta, se pega **ahí** (cambió
    de ventana mientras hablaba).
 2. Si sigue en el panel, se pega en **la última ventana ajena recordada**
    (`_recordar_destino()`, en cada vuelta del bucle de servicio: dos llamadas de
@@ -557,9 +557,9 @@ copia nueva morir en el «ya está abierto»; se cierra con `POST
 viejo en memoria: para comprobar cualquier arreglo hay que mirar la hora de
 arranque del PROCESO contra la fecha del fichero.
 
-## 29. El pegado necesita que dicta corra elevada (y avisos nuevos)
+## 29. El pegado necesita que Dicta corra elevada (y avisos nuevos)
 
-**Diagnóstico del autor, confirmado:** el texto no se pegaba porque dicta estaba
+**Diagnóstico del autor, confirmado:** el texto no se pegaba porque Dicta estaba
 corriendo **sin** administrador; con `run.bat` (elevada) sí pegaba. No es un
 efecto del rediseño: es UIPI. Windows no deja que un proceso de integridad media
 mande entrada sintetizada (el Ctrl+V del carril rápido) a una ventana de un
@@ -578,10 +578,10 @@ encima de dicta.
 - En el arranque: `dicta 1.0 listo — … (elevado: sí/no)` y, si no lo está, un
   **AVISO** de que el texto no llegará a las ventanas elevadas y que se arranque
   con `run.bat`.
-- En el pegado: si el destino es protegido y dicta no está elevada, se registra
+- En el pegado: si el destino es protegido y Dicta no está elevada, se registra
   el motivo exacto en vez de un «Pegado (Ctrl+V) enviado» que engaña.
 - `_forzar_primer_plano()` (AttachThreadInput + Alt simulado): `SetForegroundWindow`
-  a secas se ignoraba desde dicta, y por eso el Ctrl+V acababa en otra ventana.
+  a secas se ignoraba desde Dicta, y por eso el Ctrl+V acababa en otra ventana.
 
 **Isla:** `ISLAND_TOP_GAP` 10 → **0**: el borde de arriba queda pegado al borde
 de la pantalla, sin hueco (la forma ya tenía las esquinas de arriba rectas, que
@@ -657,7 +657,7 @@ intacto (17,20,28 / blanco puro). La primera versión, con 6-10 niveles, no se
 distinguía.
 
 **Ventana del panel: WebView2 sin marco.** La barra nativa no se puede estilar
-desde dicta (DwmSetWindowAttribute falla con E_HANDLE: la ventana es de Chrome) ni
+desde Dicta (DwmSetWindowAttribute falla con E_HANDLE: la ventana es de Chrome) ni
 se puede quitar (Chrome la repone), y el `window-controls-overlay` de Chrome solo
 vale para PWAs instaladas. Así que el panel pasó a **pywebview/WebView2**:
 `frameless=True`, sin barra del sistema, con barra propia inyectada
@@ -1073,7 +1073,7 @@ y `uac_admin` apagado (el binario se diferencia solo en el manifiesto, +158 B).
   Python.Runtime.Loader.Initialize from _internal/pythonnet/runtime/Python.Runtime.dll)`
   y el panel sale por el respaldo:
   `Panel: backend Chrome/Edge (ventana en modo aplicación)`.
-- **No es de dicta**: una app congelada mínima reproduce lo mismo. El
+- **No es de Dicta**: una app congelada mínima reproduce lo mismo. El
   `Python.Runtime.dll` del bundle es el del venv (md5 `fba31f75…`), el .NET puro
   lo carga desde las tres rutas con `Assembly.LoadFrom`, y el shim de
   `clr_loader` 0.3.1 (`pyclr_get_function`) solo resuelve
@@ -1820,7 +1820,7 @@ La app quedo **viva** (`GET /state` 200).
 
 ## 49. El .exe CONGELADO abre la ventana con WebView2 de verdad (ya no cae a Chrome) y se publica como paquete portable autonomo
 
-**Que pasaba.** Compilado con PyInstaller, dicta arrancaba pero el panel caia
+**Que pasaba.** Compilado con PyInstaller, Dicta arrancaba pero el panel caia
 al respaldo de Chrome: dentro del .exe fallaba `import webview`. El error real,
 cazado con un **binario de sonda congelado** (mismo spec, mismo bundle):
 
@@ -2004,7 +2004,7 @@ Además:
     Terminal al frente: el log dijo
     `Pegado (ctrl+shift+v) enviado a [terminal: Windows Terminal [CASCADIA_HOSTING_WINDOW_CLASS / windowsterminal.exe]].`
     y `Pegado inmediato en 15 ms.`; al pulsar Enter, el fichero de la terminal
-    recibió `prueba dicta 123` (el texto de la prueba de dicta).
+    recibió `prueba dicta 123` (el texto de la prueba de Dicta).
 - **Aplicación normal intacta.** `POST {"action":"test"}`… con un campo de texto
   normal (Entry de Tk) al frente: clasificado `normal: TkTopLevel / python.exe`,
   combo `ctrl+v`, y el campo recibió `dictado normal app tres`.
@@ -2142,7 +2142,7 @@ hipótesis y lo que dio cada una:
    La hipótesis «la tecla va posteada y Electron la ignora» no aplica a este
    código; se comprobó que `PostThreadMessageW`/`WM_KEYDOWN` no aparece en
    `dicta.py`. (Aun así, el posteado se añade como último recurso, ver abajo.)
-2. **Portapapeles.** dicta pone el texto en el portapapeles y **no lo restaura**
+2. **Portapapeles.** Dicta pone el texto en el portapapeles y **no lo restaura**
    (no existe ninguna ruta de restauración en `dicta.py`). La hipótesis «se
    restaura demasiado pronto» queda descartada por ausencia: no hay restauración.
 3. **Detección del destino: AQUÍ ESTABA EL FALLO.** En el `dicta.log` de la
@@ -2154,7 +2154,7 @@ hipótesis y lo que dio cada una:
    tipo xterm.js): clase `Chrome_WidgetWin_1`, .exe `hermes.exe`, que el
    clasificador trataba como **«normal» -> Ctrl+V**. Dentro de un xterm.js el
    pegado está atado a **Ctrl+Shift+V** (un `<textarea>` sí pega con Ctrl+V), así
-   que Ctrl+V no hacía nada: el texto no llegaba y dicta decía «Texto insertado».
+   que Ctrl+V no hacía nada: el texto no llegaba y Dicta decía «Texto insertado».
 
 **Medidas del mecanismo viejo y del nuevo** (con un lector en modo crudo real,
 `msvcrt.getwch` byte a byte a un fichero, que es el caso exacto de una TUI):
@@ -2337,7 +2337,7 @@ en GitHub.
 **PROMESA DE PRODUCTO (no negociable): nada sale del equipo.** La comprobación de
 versión es lo ÚNICO que puede abrir la red, y SOLO si el autor la activa a mano.
 El ajuste **`check_updates`** de `dicta_config.json` viene **APAGADO de fábrica**.
-Con él activo, dicta hace **una petición GET anónima** a la API pública de GitHub
+Con él activo, Dicta hace **una petición GET anónima** a la API pública de GitHub
 (`repos/JDMoreu/dicta/releases/latest`) con un `User-Agent` de la app; esa
 petición **no lleva ningún dato del usuario** (ni identificadores, ni telemetría,
 ni el estado de la app): lo único que viaja es la propia URL pública. Con el
@@ -2371,7 +2371,7 @@ ninguna conexión.
 - **`POST {"action":"check_updates","value":true|false}`**: interruptor que el
   panel usará para encender/apagar la comprobación (persiste en
   `dicta_config.json`). Al activarlo lanza una comprobación en segundo plano; al
-  apagarlo limpia el estado y dicta deja de tocar la red.
+  apagarlo limpia el estado y Dicta deja de tocar la red.
 - **`dicta_config.json`**: nueva clave `check_updates: false` y se siembra sola
   al arrancar si falta (mismo patrón que `paste_mode`/`silence_wait`).
 
@@ -2422,7 +2422,7 @@ actualizar. No se ha modificado ningún fichero de `panel/`.
 **Límite honesto (el único).** La sustitución en caliente (ayudante que espera al
 cierre y reemplaza los ficheros) **solo se puede llevar a cabo desde el `.exe`
 congelado** (el paquete portable). Corriendo en **modo fuente** (`dicta.py`, como
-esta instancia) no hay `.exe` que sustituir: dicta **descarga, verifica y deja el
+esta instancia) no hay `.exe` que sustituir: Dicta **descarga, verifica y deja el
 paquete listo** en `.tmp/update/new`, y lo indica (`applied:"descargado (modo
 fuente)"`) en vez de intentar reemplazar el código en marcha. Es el
 comportamiento seguro; el camino automático completo se activa en el portable.
@@ -3100,7 +3100,7 @@ GPU **dedicada**— porque nunca se le pasaba un dispositivo. En este equipo hay
 (`uploads`, `docs`, `queue`, `check_updates`, `engine_options`, `meeting`,
 `levels`, `mic_test`, `version`, y las nuevas `gpu_device*`);
 **cierre limpio que libera VRAM** (`POST quit` → puerto 47810 caído, sin
-`whisper-server` de dicta vivo, VRAM de la dedicada **14.064 → 12.170 MB**);
+`whisper-server` de Dicta vivo, VRAM de la dedicada **14.064 → 12.170 MB**);
 **instancia única** (segundo lanzamiento → «dicta ya estaba abierto» y sale);
 **atajos**, **pegado**, **MicTest** (`mic.test start/stop` OK), **doc.rename**
 (md + wav emparejado), **`/download`** md/txt (**200**, 10.391 B), **`/audio`**
@@ -3842,7 +3842,7 @@ alto mientras no se usa (la carta mide **129 px** sin nota y **150** con ella).
 la grabación, 4 claves i18n en ES y EN), `panel/style.css` (`.d-save`),
 `panel/index.html` (`#meetSaveNote`), `CHANGES.md`.
 
-**Límite honesto:** el diálogo nativo lo abre el proceso de dicta; con la ventana
+**Límite honesto:** el diálogo nativo lo abre el proceso de Dicta; con la ventana
 del panel en primer plano sale encima de ella, pero si el autor está en otra
 aplicación Windows puede pedir el foco (es lo normal en un «Guardar como...»).
 Si `comdlg32` no estuviera disponible, la acción devuelve `ok:false` y el panel
@@ -4016,3 +4016,31 @@ de esta verificación viven en `.tmp/clean107`.
 - README reescrito en formato breve: badges (release, Windows, MIT), el GIF arriba del todo, qué hace, cómo se usa el portable, notas honestas (ventanas elevadas y UAC, Chrome/Edge para el panel, iconos ocultos en Windows 11), ajustes, motor, privacidad, compilar y arquitectura resumida.
 
 **Validación:** el GIF se releyó con Pillow (150 fotogramas de 70 ms, 10.500 ms en total, 251 colores); la ruta del README coincide carácter a carácter con el fichero subido (`demo/dicta-demo.gif`) y su URL cruda responde 200; `Dicta_demo.mp4` aparece en `gh release view v1.0.7` junto al portable 1.0.7 y la release sigue siendo Latest.
+
+
+---
+
+## 70. GIF de la demo: el vídeo entero y el fotograma completo
+
+**Petición del autor:** el GIF del README enseñaba solo un tramo (24,5-35,0 s) y estaba recortado a la ventana de la app. Lo quiere entero: **todo el vídeo, de principio a fin**, y **la pantalla completa tal como se grabó**, sin recortar a la ventana.
+
+- `demo/dicta-demo.gif`, **en el mismo nombre y la misma ruta** (el README no cambia de enlace): **12.489.186 B**, **1920x1080**, **921 fotogramas**, 14 fps, **65,78 s**. El vídeo original dura **65,7667 s**: la diferencia es **+13 ms (0,02 %)**. Sin recorte de tiempo ni de imagen — el fotograma es el completo de la grabación (1920x1080, el escritorio con la ventana de Dicta centrada), no la ventana recortada del GIF anterior (1000x702, tramo 24,5-35,0 s).
+- Cadena de ffmpeg en una pasada: `fps=14` + `palettegen` (`max_colors=256`, `stats_mode=full`) + `paletteuse` (`dither=sierra2_4a`, `diff_mode=rectangle`), `-loop 0`.
+- **Ajustes elegidos y por qué** (medidos con SSIM contra el vídeo y comprobando fotogramas a la vista):
+  - **14 fps y no menos**: 10 fps = 10.869.313 B, 12 fps = 11.817.345 B, 14 fps = 12.489.186 B. El peso no aprieta (el objetivo era no pasar de 10-15 MB y GitHub solo avisa a partir de 50 MB), así que se queda el **más fluido** en vez del más liviano.
+  - **`dither=sierra2_4a`** (error-diffusion), no `none`: sin dither pesa menos (9.844.509 B a 10 fps) y su SSIM es algo mayor (0,9989 frente a 0,9984), pero en el degradado oscuro del escritorio **aparecen escalones visibles** que con sierra2_4a no están. Manda la vista, no el byte.
+  - **`stats_mode=full`**, no `diff`: con el vídeo entero hay escenas de contenido distinto (ajustes, panel, dictado) y la paleta de `diff` sale peor (SSIM 0,9980 frente a 0,9985) sin ahorrar apenas peso.
+  - **1920x1080**, la resolución del propio vídeo: no hubo que bajarla para cumplir el objetivo.
+
+**Validación (cifras medidas).** ffprobe: GIF **1920x1080, 921 fotogramas, 65,780 s** frente a los **65,7667 s** del MP4 (Δ = **+13 ms**); el **último fotograma** del GIF coincide con el último del vídeo (**SSIM 0,999998**) y los fotogramas 1-6 con los del vídeo en t=k/14 con error medio ≤ **0,55 niveles**, así que está el principio y está el final. Comparación fotograma a fotograma del GIF entero contra el vídeo: **SSIM 0,9985**. Relectura con Pillow: 921 fotogramas, retardos de 70 y 80 ms. La URL cruda `https://raw.githubusercontent.com/JDMoreu/dicta/master/demo/dicta-demo.gif` responde **200** con **12.489.186 B** y el **mismo sha256** que el fichero local (`9a635d56e174d9fe2feaee923485fc61afa875e21a388eb44cf1607069c95a3b`); `gh api repos/JDMoreu/dicta/contents/demo` da `dicta-demo.gif` con **12.489.186 B**; el README sigue apuntando a `demo/dicta-demo.gif` carácter a carácter; `git rev-parse HEAD` == `git ls-remote origin master` (`8fd6ec32…`).
+
+## 71. El nombre de la app en la prosa: Dicta, con D mayúscula
+
+**Regla del autor:** al referirse a Dicta en el texto del repo, con **D mayúscula**; las rutas, los ficheros, los comandos, los identificadores y las URLs **no se tocan**.
+
+- **README.md (completo):** `# Dicta — dictado y transcripción de voz 100 % local`; «administrador, **Dicta** tiene que correr igual»; «Si no ves el de **Dicta** junto al reloj»; «**la onda de Dicta**».
+- **CHANGES.md:** los cuatro encabezados — `# Registro de modificaciones — Dicta`, `## 19. Lanzar Dicta no mostraba nada`, `## 29. El pegado necesita que Dicta corra elevada (y avisos nuevos)` y `## Nota sobre el icono de la bandeja (no es un fallo de Dicta)`. En el **cuerpo** se corrigieron las **21 menciones de prosa** y se dejaron a proposito las citas literales (mensajes de la app, transcripciones y titulos de ventana).
+- **Releases (8):** los títulos `dicta vX` → **`Dicta vX`** y el H1 de cada nota (`# Dicta vX`), más «**Dicta** promete que nada sale de tu equipo» en las notas de la v1.0.2. Editadas con `gh release edit --title` y `--notes-file` (fichero UTF-8, que es como se evitan los acentos rotos de la línea de comandos). **No se creó ninguna release nueva**: los assets siguen intactos (`dicta-portable-1.0.7-windows-x64.zip`, 261.473.037 B, y `Dicta_demo.mp4`, 9.756.354 B; los dos `uploaded`) y la **v1.0.7 sigue siendo Latest**, sin draft ni prerelease.
+- **Se quedan en minúscula a propósito** (no son prosa, son identificadores o cadenas literales): rutas y ficheros (`dicta.exe`, `dicta.py`, `dicta_ui.py`, `dicta_capture.py`, `dicta_icon.wave_mark`, `dist\dicta\`, `%LOCALAPPDATA%\Programs\dicta`, `dicta-portable-1.0.7-windows-x64.zip`, `demo/dicta-demo.gif`), el repo y las URLs (`JDMoreu/dicta`, las de releases y las de raw), los comandos (`cd dicta`, `git clone …`), el verbo y sus derivados (*«Alt+Q dicta»*, *dictado*, *dictas*), y las citas de cadenas reales de la app («dicta ya está abierto», la ventana titulada `dicta`). También el paso de la bandeja del README («→ dicta»): ese rótulo lo registra la app en minúscula (`PANEL_TITLE = "dicta — Ajustes"` en `dicta.py:4791`, `pystray.Icon("dicta", …, "dicta — dictado por voz")` en `dicta_ui.py:550`), así que se deja como el usuario lo va a leer en Windows. Y las citas literales del propio CHANGES.md («dieta ya estaba abierto», `prueba dicta 123`, el titulo `dicta — Ajustes`) se quedan tal cual: son transcripciones de lo que dijo o imprimió la app, y cambiar una cita falsea el registro.
+
+**Validación.** Los **3 badges** del README responden **200**; `demo/dicta-demo.gif` (sha256 arriba), `demo/panel-dictado.png` y `demo/panel-reunion.png` también **200**; `gh release list` enseña los 8 títulos nuevos con **v1.0.7 = Latest**; `git status --short` solo deja `dicta_config.json` (un ajuste del autor: no se ha tocado).
