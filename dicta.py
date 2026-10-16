@@ -222,11 +222,15 @@ SCRIPT_DIR = data_dir()          # datos externos, junto a dicta.exe
 RESOURCE_DIR = resource_dir()    # recursos incluidos en el bundle
 CONFIG_FILE = os.path.join(SCRIPT_DIR, "dicta_config.json")
 LOG_FILE = os.path.join(SCRIPT_DIR, "dicta.log")
+# Log del MOTOR (stderr de whisper-server): se reescribe en cada arranque de
+# motor y sirve para comprobar EN QUE dispositivo GPU carga el modelo (ggml
+# imprime «using VulkanN backend»). Solo diagnostico; no afecta a la app.
+SERVER_LOG = os.path.join(SCRIPT_DIR, "whisper_server.log")
 # VERSION UNICA de la app. Es el UNICO sitio donde se cambia la version: de
 # aqui sale `/state.version` (el panel la pinta como vX.Y.Z) y el log de
 # arranque. El comparador de actualizaciones tambien la usa. `APP_VERSION` se
 # conserva como alias por compatibilidad.
-VERSION = "1.0.4"
+VERSION = "1.0.5"
 APP_VERSION = VERSION
 WHISPER_EXE = os.path.join(RESOURCE_DIR, "whisper_bin", "Release", "whisper-cli.exe")
 # Motores GPU: cada backend vive en su carpeta con su whisper-server + DLLs.
@@ -330,9 +334,13 @@ def config_set(key, value):
 #
 # El estado de la ultima comprobacion se publica en `/state.update`:
 #   {available, latest, url, notes, checked_at, progress}
-# y se cambia con POST {"action":"check_update"} (comprueba, solo si esta
-# activo) y POST {"action":"update"} (descarga, verifica e instala el paquete
-# nuevo). El ajuste se enciende/apaga con
+# y el ajuste REAL (lo que hay en dicta_config.json) en `/state.check_updates`.
+# Se comprueba con POST {"action":"check_update"} (respeta el ajuste: si esta
+# apagado no toca la red) o POST {"action":"check_update","value":{"force":true}}
+# (consulta GitHub AUNQUE este apagado: es una accion EXPLICITA del usuario, el
+# enlace «Actualizar» del panel). Se descarga/in instala con
+# POST {"action":"update"}, que NO lo bloquea el ajuste (tambien es explicito).
+# El ajuste se enciende/apaga con
 # POST {"action":"check_updates","value":true|false} y PERSISTE en
 # dicta_config.json.
 UPDATE_REPO = "JDMoreu/dicta"
@@ -340,6 +348,8 @@ UPDATE_API = f"https://api.github.com/repos/{UPDATE_REPO}/releases/latest"
 UPDATE_UA = "dicta-update-check"     # GitHub exige un User-Agent en su API
 # Estado publicado en /state.update. 'enabled'/'error'/'applied' son extra (el
 # panel puede ignorarlos); los cinco de la especificacion estan siempre.
+# 'enabled' refleja el ajuste REAL (`check_updates`), igual que la clave
+# `check_updates` de /state, para que no haya dos verdades distintas.
 UPDATE_STATE = {"available": False, "latest": "", "url": "", "notes": "",
                 "checked_at": "", "progress": 0,
                 "enabled": False, "error": "", "applied": "",
@@ -411,17 +421,21 @@ def _update_blank(reason="", enabled=None):
     return dict(UPDATE_STATE)
 
 
-def check_update():
-    """Consulta la ultima release SOLO si `check_updates` esta activo.
+def check_update(force=False):
+    """Consulta la ultima release de GitHub.
 
-    Sin el ajuste NO toca la red: devuelve el estado con `enabled=False` y una
-    nota. Con el ajuste activo hace un GET anonimo a la API publica de GitHub y
-    rellena `available/latest/url/notes/checked_at`. Nunca envia datos.
+    Sin `force`, respeta el ajuste `check_updates`: si esta apagado NO toca la
+    red (devuelve el estado con `enabled=False` y una nota). Con `force=True`
+    -- POST {"action":"check_update","value":{"force":true}} -- consulta GitHub
+    AUNQUE el ajuste este apagado: es una accion EXPLICITA del usuario (el
+    enlace «Actualizar» del panel), no una comprobacion de fondo. En ambos
+    casos es un GET anonimo a la API publica de GitHub y rellena
+    `available/latest/url/notes/checked_at`; nunca envia datos del usuario.
     """
-    if not update_enabled():
+    if not force and not update_enabled():
         log("Actualizaciones: comprobacion desactivada; no se consulta la red.")
         return _update_blank("", enabled=False)
-    _update_blank("", enabled=True)
+    _update_blank("", enabled=update_enabled())
     import urllib.request
     try:
         req = urllib.request.Request(
@@ -438,7 +452,7 @@ def check_update():
             data.get("assets") or [])
         available = _version_tuple(latest) > _version_tuple(VERSION)
         UPDATE_STATE.update({
-            "enabled": True, "available": available, "latest": latest,
+            "enabled": update_enabled(), "available": available, "latest": latest,
             "url": url, "notes": notes,
             "checked_at": time.strftime("%Y-%m-%d %H:%M:%S"),
             "progress": 0, "error": "", "applied": "",
@@ -722,13 +736,14 @@ def prepare_update(zip_path, tmp):
 def apply_update(launch=True):
     """Descarga, verifica y aplica la actualizacion.
 
-    Solo si `check_updates` esta activo y hay una version nueva. En modo
-    PORTABLE (exe congelado) lanza el ayudante y cierra la app para que la
-    sustitucion ocurra en frio. En modo FUENTE (dicta.py) no puede sustituirse
-    en marcha: deja el paquete verificado en `.tmp/update/new` y lo indica.
+    Es una accion EXPLICITA del usuario (el enlace «Instalar» del panel), asi
+    que NO la bloquea el ajuste `check_updates`: basta con que haya una version
+    nueva conocida (`available`), aunque el ajuste este apagado y el estado lo
+    haya rellenado una comprobacion FORZADA previa. En modo PORTABLE (exe
+    congelado) lanza el ayudante y cierra la app para que la sustitucion ocurra
+    en frio. En modo FUENTE (dicta.py) no puede sustituirse en marcha: deja el
+    paquete verificado en `.tmp/update/new` y lo indica.
     """
-    if not update_enabled():
-        return {"ok": False, "error": "comprobacion desactivada"}
     if not UPDATE_STATE.get("available"):
         return {"ok": False, "error": "no hay version nueva (comprueba antes)"}
     try:
@@ -965,9 +980,80 @@ def engine_reason(key, available):
     return "Elige solo la mejor opcion disponible en este equipo."
 
 
+# --- dispositivos GPU concretos -------------------------------------------
+# El autor puede elegir no solo la TECNOLOGIA (Vulkan/CPU) sino QUE tarjeta,
+# porque en este equipo hay DOS GPU Vulkan (una dedicada y una integrada) y
+# quiere poder decidir en cual corre el modelo. whisper.cpp/ggml publica la
+# lista REAL de dispositivos al inicializar el backend; se enumeran ejecutando
+# el binario con `--help` (tarda ~0,2 s y no carga ningun modelo) y parseando
+# las lineas «ggml_vulkan: N = NOMBRE | detalles». El resultado se CACHEA:
+# /state se sondea muy a menudo y no se lanza un proceso por peticion.
+_GPU_DEVICE_CACHE = {}
+
+# Binario con backend GPU de cada tecnologia (solo Vulkan aqui: no hay CUDA ni
+# ROCm). Las tecnologias sin binario no listan dispositivos.
+ENGINE_SERVER_EXE = {"vulkan": WHISPER_VULKAN, "cuda": WHISPER_CUDA,
+                     "rocm": WHISPER_ROCM}
+
+_DEVICE_LINE_RE = re.compile(
+    r"^\s*(?:ggml_)?(?:vulkan|cuda)[\w-]*:\s*(\d+)\s*=\s*(.+)$", re.IGNORECASE)
+
+
+def list_gpu_devices(engine, force=False):
+    """Dispositivos REALES del motor, tal cual los reporta el binario:
+    [{'index': N, 'name': '...', 'desc': '...'}]. Lista vacia si la tecnologia
+    no usa GPU (CPU) o no hay binario instalado. Cacheado (force reenumera)."""
+    exe = ENGINE_SERVER_EXE.get(engine)
+    if not exe or not os.path.isfile(exe):
+        return []
+    if not force and engine in _GPU_DEVICE_CACHE:
+        return _GPU_DEVICE_CACHE[engine]
+    devices = []
+    try:
+        flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        proc = subprocess.run([exe, "--help"], capture_output=True,
+                              timeout=30, creationflags=flags)
+        blob = ((proc.stderr or b"") + (proc.stdout or b"")).decode(
+            "utf-8", "replace")
+        for line in blob.splitlines():
+            m = _DEVICE_LINE_RE.match(line)
+            if not m:
+                continue
+            name, _, desc = m.group(2).strip().partition(" | ")
+            devices.append({"index": int(m.group(1)), "name": name.strip(),
+                            "desc": desc.strip()})
+    except Exception as e:
+        log(f"No se pudieron enumerar los dispositivos de {engine}: {e}")
+    _GPU_DEVICE_CACHE[engine] = devices
+    return devices
+
+
+def gpu_device_pref(engine):
+    """Preferencia de GPU guardada, normalizada: (pref, index) donde pref es
+    'auto' o {'index': N} e index es el indice efectivo (None = auto). Si el
+    indice guardado ya no existe entre los dispositivos del motor (otra
+    tarjeta, otro equipo), cae a auto."""
+    pref = config_get("gpu_device", "auto")
+    index = None
+    if isinstance(pref, dict):
+        index = pref.get("index")
+    elif isinstance(pref, (int, float)) and not isinstance(pref, bool):
+        index = int(pref)
+    if index is None:
+        return "auto", None
+    try:
+        index = int(index)
+    except (TypeError, ValueError):
+        return "auto", None
+    if any(d["index"] == index for d in list_gpu_devices(engine)):
+        return {"index": index}, index
+    return "auto", None
+
+
 def engine_options():
     """Opciones de motor seleccionables + si estan disponibles AQUI, con un
-    motivo en lenguaje de usuario por motor (lo pinta el panel)."""
+    motivo en lenguaje de usuario por motor (lo pinta el panel) y la lista de
+    dispositivos GPU concretos de cada tecnologia (vacia si no aplica)."""
     info = detect_engines()
     avail = {"auto": True,
              "vulkan": bool(info["vulkan"] or info.get("vulkan_runtime")),
@@ -976,7 +1062,8 @@ def engine_options():
              "cpu": True}
     return [{"key": k, "label": ENGINE_LABELS.get(k, k),
              "available": avail.get(k, False),
-             "reason": engine_reason(k, avail.get(k, False))}
+             "reason": engine_reason(k, avail.get(k, False)),
+             "devices": list_gpu_devices(k) if k in ENGINE_SERVER_EXE else []}
             for k in ENGINES]
 
 
@@ -997,6 +1084,8 @@ class WhisperServer:
         self.model_path = None
         self.language = None
         self.engine = None
+        self.device = None        # indice de GPU aplicado (None = auto)
+        self._errfh = None        # handle del log del motor (stderr)
         self.lock = threading.Lock()
 
     def _server_exe(self, engine: str):
@@ -1025,24 +1114,36 @@ class WhisperServer:
         return False
 
     def ensure(self, model_path: str, language: str, engine: str) -> bool:
-        """Arranca o reusa el servidor GPU para el modelo/idioma/motor dados."""
+        """Arranca o reusa el servidor GPU para el modelo/idioma/motor dados.
+        El dispositivo GPU concreto sale de la config (gpu_device)."""
         exe = self._server_exe(engine)
         if engine == "cpu" or not os.path.isfile(exe):
             return False
+        _pref, device = gpu_device_pref(engine)
         if (self.proc is not None and self.proc.poll() is None
                 and self.model_path == model_path and self.language == language
-                and self.engine == engine):
+                and self.engine == engine and self.device == device):
             return True
         self.stop()
         try:
             flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
             cmd = [exe, "-m", model_path, "--host", "127.0.0.1",
                    "--port", str(SERVER_PORT), "-l", language]
+            if device is not None:
+                # QUE tarjeta usar: el indice tal cual lo lista el motor. Sin
+                # este flag, whisper.cpp usa el dispositivo 0 (la dedicada).
+                cmd += ["--device", str(device)]
             if engine == "vulkan":
                 # En Vulkan los "threads" controlan el offload; 0 = auto.
                 cmd += ["-t", str(max(4, (os.cpu_count() or 4) - 2))]
+            try:
+                self._errfh = open(SERVER_LOG, "wb")   # log del motor (prueba)
+            except Exception:
+                self._errfh = None
             self.proc = subprocess.Popen(
-                cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                cmd, stdout=subprocess.DEVNULL,
+                stderr=self._errfh if self._errfh is not None
+                else subprocess.DEVNULL,
                 creationflags=flags)
         except Exception as e:
             log(f"Servidor {engine_label(engine)} no arrancó: {e}")
@@ -1053,7 +1154,10 @@ class WhisperServer:
             self.stop()
             return False
         self.model_path, self.language, self.engine = model_path, language, engine
-        log(f"Motor {engine_label(engine)} listo.")
+        self.device = device
+        where = ("auto (dispositivo 0)" if device is None
+                 else f"dispositivo {device}")
+        log(f"Motor {engine_label(engine)} listo ({where}).")
         return True
 
     def transcribe(self, audio, model_path, language, prompt="", engine="auto"):
@@ -1099,7 +1203,14 @@ class WhisperServer:
                 except Exception:
                     pass
             self.proc = None
+        try:
+            if self._errfh is not None:
+                self._errfh.close()
+        except Exception:
+            pass
+        self._errfh = None
         self.engine = None
+        self.device = None
 
 
 def _wav_bytes(audio: np.ndarray) -> bytes:
@@ -2731,6 +2842,84 @@ def _audio_upload_ref(name: str) -> str:
     return b if os.path.isfile(os.path.join(AUDIOS_DIR, b)) else ""
 
 
+def _audios_ref(name: str) -> str:
+    """Ruta en ``audios/`` de un fichero dado por NOMBRE (nunca una ruta).
+
+    La usa el BORRADO para limpiar la copia de trabajo emparejada. Acepta solo
+    el nombre (sin separadores ni ``..``) y devuelve la ruta solo si el fichero
+    existe; si no, "".
+    """
+    b = os.path.basename(str(name or "").replace("\\", "/")).strip()
+    if (not b or b in (".", "..") or ".." in b or ":" in b
+            or "/" in b or "\\" in b):
+        return ""
+    p = os.path.join(AUDIOS_DIR, b)
+    return p if os.path.isfile(p) else ""
+
+
+def _remove_file(path: str, tries: int = 5, delay: float = 0.4) -> bool:
+    """Borra un fichero con reintentos cortos.
+
+    En Windows no se puede borrar un fichero que otro hilo tiene abierto (la
+    cola de transcripcion puede estar leyendo el audio justo al quitarlo). Unos
+    pocos reintentos evitan que la copia de trabajo sobreviva por una carrera.
+    Devuelve True si el fichero ya no esta al terminar.
+    """
+    if not path:
+        return False
+    for i in range(tries):
+        try:
+            if not os.path.isfile(path):
+                return True
+            os.remove(path)
+            return True
+        except Exception as e:
+            if i == tries - 1:
+                log(f"No se pudo borrar {path}: {e}")
+                return False
+            time.sleep(delay)
+    return False
+
+
+def audio_orphans():
+    """Audios de ``audios/`` que ya no emparejan con ningun documento ni subida.
+
+    El emparejamiento es por NOMBRE BASE (el mismo que usan ``doc.rename`` y
+    ``/download``): un documento ``textos/X.md`` reclama ``audios/X.wav`` y cada
+    subida reclama el audio que guarda en su ficha. Lo que quede suelto es un
+    huerfano, PERO AQUI NO SE BORRA NADA: solo se lista (accion
+    ``audio.orphans``) para que el autor decida. El borrado es una accion aparte
+    (``audio.clean``) que exige confirmacion explicita.
+    """
+    refs = set()
+    try:
+        for f in os.listdir(DOCS_DIR):
+            if f.lower().endswith(".md"):
+                refs.add(os.path.splitext(f)[0] + ".wav")
+    except Exception:
+        pass
+    try:
+        with _uploads.lock:
+            for i in _uploads.items:
+                a = str(i.get("audio") or "")
+                if a:
+                    refs.add(a)
+    except Exception:
+        pass
+    out = []
+    try:
+        for f in os.listdir(AUDIOS_DIR):
+            if f in refs:
+                continue
+            p = os.path.join(AUDIOS_DIR, f)
+            if os.path.isfile(p):
+                out.append({"name": f, "size": os.path.getsize(p)})
+    except Exception:
+        pass
+    out.sort(key=lambda x: x["name"])
+    return out
+
+
 class UploadStore:
     """Registro PERSISTENTE de los audios que el autor sube a la cola.
 
@@ -2903,12 +3092,13 @@ class UploadStore:
                 return False
             self.items.remove(hit)
             path = os.path.join(UPLOADS_DIR, hit["stored"])
+            audio = str(hit.get("audio") or "")
         self._save()
-        try:
-            if os.path.isfile(path):
-                os.remove(path)
-        except Exception as e:
-            log(f"No se pudo borrar la subida {path}: {e}")
+        # Se borran el fichero de uploads/ Y su copia de trabajo en audios/ (la
+        # que dejo TranscribeQueue.add al encolar). Sin esto la copia quedaba
+        # huerfana para siempre: no habia ninguna accion que la borrara.
+        for p in (path, _audios_ref(audio)):
+            _remove_file(p)
         return True
 
     def snapshot(self):
@@ -3923,39 +4113,47 @@ class ControlServer:
                     return
                 action = msg.get("action")
                 if action == "check_update":
-                    # Comprueba si hay version nueva. SOLO si el ajuste
-                    # `check_updates` esta activo; si no, NO toca la red.
+                    # Comprueba si hay version nueva. Sin `force` respeta el
+                    # ajuste `check_updates` (si esta apagado, NO toca la red).
+                    # Con force -- {"action":"check_update","value":{"force":
+                    # true}} -- consulta GitHub AUNQUE este apagado: es una
+                    # accion EXPLICITA del usuario (el enlace «Actualizar» del
+                    # panel), no una comprobacion de fondo.
                     try:
-                        result = check_update()
+                        val = msg.get("value")
+                        force = (bool(val.get("force"))
+                                 if isinstance(val, dict) else False)
+                        result = check_update(force=force)
+                        ran = bool(force or result.get("enabled"))
                         self._send(200, json.dumps(
-                            {"ok": bool(result.get("enabled")),
+                            {"ok": ran and not bool(result.get("error")),
+                             "force": force,
                              "update": result}).encode("utf-8"))
                     except Exception as e:
                         self._send(500, json.dumps(
                             {"error": str(e)}).encode("utf-8"))
                     return
                 if action == "update":
-                    # Descarga, verifica e instala el paquete de la release.
-                    # El trabajo pesado va en un hilo: responde ya y el avance
-                    # se sigue por /state.update.progress.
+                    # Descarga, verifica e instala el paquete de la release. Es
+                    # una accion EXPLICITA del usuario (el enlace «Instalar»
+                    # del panel): NO la bloquea el ajuste `check_updates`. Con
+                    # la comprobacion automatica apagada, una busqueda FORZADA
+                    # previa (check_update con force) ya relleno el estado, y
+                    # este POST sigue valiendo. El trabajo pesado va en un
+                    # hilo: responde ya y el avance se sigue por
+                    # /state.update.progress.
                     try:
-                        if not update_enabled():
-                            self._send(200, json.dumps(
-                                {"ok": False,
-                                 "error": "comprobacion desactivada",
-                                 "update": dict(UPDATE_STATE)}).encode("utf-8"))
-                            return
                         if not UPDATE_STATE.get("available"):
                             self._send(200, json.dumps(
-                                {"ok": False,
-                                 "error": "no hay version nueva (comprueba antes)",
+                                {"ok": True, "accepted": True, "started": False,
+                                 "note": "no hay version nueva (comprueba antes)",
                                  "update": dict(UPDATE_STATE)}).encode("utf-8"))
                             return
                         threading.Thread(target=apply_update,
                                          kwargs={"launch": True},
                                          daemon=True).start()
                         self._send(202, json.dumps(
-                            {"ok": True, "started": True,
+                            {"ok": True, "accepted": True, "started": True,
                              "update": dict(UPDATE_STATE)}).encode("utf-8"))
                     except Exception as e:
                         self._send(500, json.dumps(
@@ -3968,6 +4166,48 @@ class ControlServer:
                         self._send(200 if ok else 404, json.dumps(
                             {"ok": ok, "uploads": _uploads.snapshot()}
                         ).encode("utf-8"))
+                    except Exception as e:
+                        self._send(500, json.dumps(
+                            {"error": str(e)}).encode("utf-8"))
+                    return
+                if action == "audio.orphans":
+                    # SOLO LEE: lista los audios de audios/ que ya no emparejan
+                    # con ningun documento ni subida. No borra nada.
+                    try:
+                        orphans = audio_orphans()
+                        self._send(200, json.dumps(
+                            {"ok": True, "count": len(orphans),
+                             "orphans": orphans}).encode("utf-8"))
+                    except Exception as e:
+                        self._send(500, json.dumps(
+                            {"error": str(e)}).encode("utf-8"))
+                    return
+                if action == "audio.clean":
+                    # Borra los huerfanos de audios/ SOLO a proposito: exige
+                    # {"action":"audio.clean","value":"confirmar"}. Nunca se
+                    # ejecuta sola (los 35 .wav que ya habia siguen intactos
+                    # hasta que el autor lo pida).
+                    try:
+                        if str(msg.get("value") or "").strip().lower() not in (
+                                "confirmar", "confirm"):
+                            self._send(400, json.dumps(
+                                {"ok": False,
+                                 "error": "confirmacion requerida"}
+                            ).encode("utf-8"))
+                            return
+                        removed = []
+                        for o in audio_orphans():
+                            p = os.path.join(AUDIOS_DIR, o["name"])
+                            try:
+                                os.remove(p)
+                                removed.append(o["name"])
+                            except Exception as e:
+                                log(f"No se pudo borrar el audio huerfano "
+                                    f"{p}: {e}")
+                        log(f"Audios huerfanos borrados: {len(removed)}")
+                        self._send(200, json.dumps(
+                            {"ok": True, "removed": len(removed),
+                             "names": removed}).encode("utf-8"))
                     except Exception as e:
                         self._send(500, json.dumps(
                             {"error": str(e)}).encode("utf-8"))
@@ -4050,7 +4290,8 @@ class ControlServer:
                     # doc.delete: elimina el documento; doc.open: lo abre.
                     try:
                         name_doc = msg.get("doc", "")
-                        if ".." in name_doc or "\\" in name_doc or not name_doc:
+                        if (".." in name_doc or "\\" in name_doc
+                                or "/" in name_doc or not name_doc):
                             self._send(400, b'{"error":"bad doc"}')
                             return
                         target = os.path.join(DOCS_DIR, name_doc)
@@ -4058,7 +4299,15 @@ class ControlServer:
                             self._send(404, b'{"error":"not found"}')
                             return
                         if action == "doc.delete":
+                            base = os.path.splitext(name_doc)[0]
                             os.remove(target)
+                            # La copia de trabajo del audio en audios/ se va con
+                            # el documento (para una reunion, la grabacion
+                            # original: audios/reunion-<sello>.wav). Se empareja
+                            # por NOMBRE BASE, igual que doc.rename y /download.
+                            wav = _audios_ref(base + ".wav")
+                            if wav:
+                                _remove_file(wav)
                             self._send(200, b'{"ok":true}')
                         else:
                             with open(target, "r", encoding="utf-8") as fh:
@@ -4389,6 +4638,106 @@ def _round_window_corners(hwnd, log_ok=True):
     return True
 
 
+# ---- Redimensionado de la ventana del panel (sin marco) --------------------
+# La ventana del panel NO se puede redimensionar hoy, y la causa es doble y
+# MEDIDA:
+#   1. Al ser sin marco (`frameless=True`), Windows no dibuja la franja de
+#      borde y el form no tiene el estilo de tamaño (WS_THICKFRAME): no hay
+#      bordes que agarrar. La barra superior SÍ arrastra porque ese gesto se
+#      implementó a mano (`start_drag`), pero eso solo MUEVE.
+#   2. La vía habitual para devolver los bordes —responder WM_NCHITTEST con
+#      HTLEFT/HTRIGHT/... en la franja del borde— TAMPOCO sirve en ESTA
+#      ventana, y está medido por qué: el control de WebView2 (clase
+#      `Chrome_RenderWidgetHostHWND`) CUBRE TODO el cliente, de borde a borde,
+#      así que `WindowFromPoint` en CUALQUIER punto del borde devuelve ESE hijo
+#      y nunca el form de nivel superior. Los mensajes de ratón no llegan al
+#      form, así que su WM_NCHITTEST no se dispara jamás.
+# Solución: la barra (panel/desktop.js) detecta la franja del borde con unas
+# tiras invisibles y pide aquí el redimensionado; el host lleva entonces el bucle
+# de tamaño él mismo (igual que ya lleva el de ARRASTRE), siguiendo al ratón con
+# SetWindowPos. Se probó ANTES la vía «nativa» de mandar WM_NCLBUTTONDOWN con el
+# código HT del borde (el mismo truco que mueve una ventana por HTCAPTION) y se
+# MIDIÓ que NO redimensiona esta ventana (arrastrando los cuatro bordes y una
+# esquina: dW=dH=dX=dY=0): sin WS_THICKFRAME Windows no entra en el bucle modal
+# de tamaño. Por eso el bucle lo lleva el host, que además aplica el mínimo del
+# diseño (y `_install_panel_min_size` lo refuerza en WM_GETMINMAXINFO).
+
+# Bordes que puede pedir la barra (una esquina combina dos).
+EDGES = ("left", "right", "top", "bottom",
+         "topleft", "topright", "bottomleft", "bottomright")
+
+WM_GETMINMAXINFO = 0x0024
+_PANEL_MIN_W, _PANEL_MIN_H = 800, 520      # suelo del diseño (ver create_...)
+
+
+class _MINMAXINFO(ctypes.Structure):
+    """MINMAXINFO de Win32: lleva el tamaño mínimo que respeta el bucle de tamaño."""
+    _fields_ = [("ptReserved", _POINT), ("ptMaxSize", _POINT),
+                ("ptMaxPosition", _POINT), ("ptMinTrackSize", _POINT),
+                ("ptMaxTrackSize", _POINT)]
+
+
+# WNDPROC: LRESULT CALLBACK (HWND, UINT, WPARAM, LPARAM). En x64 el puntero de
+# la función vieja y el resultado son de 64 bits (c_ssize_t), o el HWND llega
+# truncado con extensión de signo (la misma familia de fallo que el resto del
+# fichero).
+_WNDPROC = ctypes.WINFUNCTYPE(ctypes.c_ssize_t, wintypes.HWND, wintypes.UINT,
+                              wintypes.WPARAM, wintypes.LPARAM)
+_panel_wndprocs = {}        # hwnd -> (proc_viejo, proc_nuevo)  (evita el GC)
+
+
+def _install_panel_min_size(hwnd):
+    """Fija el TAMAÑO MÍNIMO de la ventana del panel subclasificando su WndProc.
+
+    Intercepta SOLO WM_GETMINMAXINFO (mensaje benigno que SÍ llega al form, al
+    contrario que WM_NCHITTEST) y garantiza ptMinTrackSize >= 800x520, para que
+    el redimensionado nativo no pueda colapsar el diseño por debajo del suelo.
+    Encadena al WndProc original con CallWindowProcW; idempotente por hwnd.
+    Devuelve True si quedó instalado.
+    """
+    if not hwnd:
+        return False
+    key = int(hwnd)
+    if key in _panel_wndprocs:
+        return True
+    try:
+        u = _user32
+        hw = wintypes.HWND(hwnd)
+        u.GetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int]
+        u.GetWindowLongPtrW.restype = ctypes.c_void_p
+        u.SetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int,
+                                        ctypes.c_void_p]
+        u.SetWindowLongPtrW.restype = ctypes.c_void_p
+        u.CallWindowProcW.argtypes = [ctypes.c_void_p, wintypes.HWND,
+                                      wintypes.UINT, wintypes.WPARAM,
+                                      wintypes.LPARAM]
+        u.CallWindowProcW.restype = ctypes.c_ssize_t
+        GWLP_WNDPROC = -4
+        old = u.GetWindowLongPtrW(hw, GWLP_WNDPROC)
+
+        def _proc(h, msg, wp, lp):
+            if msg == WM_GETMINMAXINFO:
+                try:
+                    mmi = ctypes.cast(lp, ctypes.POINTER(_MINMAXINFO)).contents
+                    if mmi.ptMinTrackSize.x < _PANEL_MIN_W:
+                        mmi.ptMinTrackSize.x = _PANEL_MIN_W
+                    if mmi.ptMinTrackSize.y < _PANEL_MIN_H:
+                        mmi.ptMinTrackSize.y = _PANEL_MIN_H
+                except Exception:
+                    pass
+            return u.CallWindowProcW(old, h, msg, wp, lp)
+
+        func = _WNDPROC(_proc)
+        u.SetWindowLongPtrW(hw, GWLP_WNDPROC, ctypes.cast(func, ctypes.c_void_p))
+        _panel_wndprocs[key] = (old, func)
+        log(f"Panel: tamaño mínimo {_PANEL_MIN_W}x{_PANEL_MIN_H} fijado "
+            f"(WM_GETMINMAXINFO).")
+        return True
+    except Exception as e:
+        log(f"Panel: no se pudo fijar el tamaño mínimo ({e}).")
+        return False
+
+
 _DOTNET_CONFIG = (
     '<?xml version="1.0" encoding="utf-8"?>\n'
     "<configuration>\n"
@@ -4506,6 +4855,15 @@ class PanelJS:
         """Arranca el arrastre de la ventana (lo pide la barra al pulsarla)."""
         return self._host.start_drag()
 
+    def resize_window(self, edge):
+        """Arranca el REDIMENSIONADO NATIVO por el borde `edge` («left»,
+        «right», «top», «bottom» y las cuatro esquinas). Lo pide la barra
+        (panel/desktop.js) cuando se pulsa una de sus tiras de borde invisibles;
+        ver la nota de `_HIT_EDGE` para por qué no puede hacerse por
+        WM_NCHITTEST en esta ventana.
+        """
+        return self._host.resize_window(edge)
+
     def isMaximized(self):
         return bool(self._host.maximized)
 
@@ -4532,6 +4890,7 @@ class WebViewPanelHost:
         self._hooked = False
         self._polished = False
         self._dragging = False
+        self._resizing = False
         self._quitting = False
 
     # ---- ciclo de vida (interfaz de PanelHost)
@@ -4575,6 +4934,7 @@ class WebViewPanelHost:
         self._polished = True
         if self._hwnd_resuelto():
             _round_window_corners(self.hwnd)
+            _install_panel_min_size(self.hwnd)
             _wm_set_icon(self.hwnd, getattr(app, "theme", "light"))
             return
 
@@ -4584,6 +4944,7 @@ class WebViewPanelHost:
                 if h:
                     self.hwnd = h
                     _round_window_corners(h)
+                    _install_panel_min_size(h)
                     # Icono OFICIAL (el de la bandeja) en la ventana/barra de
                     # tareas: el mismo render que la bandeja y la barra.
                     _wm_set_icon(h, getattr(app, "theme", "light"))
@@ -4617,6 +4978,93 @@ class WebViewPanelHost:
         self._dragging = True
         threading.Thread(target=self._drag_loop, daemon=True).start()
         return True
+
+    # ---- redimensionado de los bordes (js_api.resize_window)
+    def resize_window(self, edge):
+        """Redimensiona la ventana SIGUIENDO al ratón desde el borde `edge`.
+
+        `edge` es «left», «right», «top», «bottom» o una esquina («topleft»,
+        «topright», «bottomleft», «bottomright»). Lo pide la barra
+        (panel/desktop.js) cuando se pulsa una de sus tiras de borde invisibles.
+        El host lleva el bucle él mismo (bucle clásico de Win32, como el de
+        ARRASTRE): guarda rectángulo y cursor al empezar y, mientras el botón
+        siga pulsado, coloca la ventana moviendo SOLO los lados de ese borde,
+        con el mínimo 800x520. Ver la nota de `EDGES` para por qué no vale la vía
+        nativa (WM_NCHITTEST no llega al form; WM_NCLBUTTONDOWN/SC_SIZE no
+        arranca sin WS_THICKFRAME → medido, no redimensiona).
+        """
+        e = str(edge).lower()
+        if e not in EDGES or self.win is None:
+            return False
+        if self._resizing:
+            return True
+        hwnd = self.hwnd if self._hwnd_resuelto() else _own_top_hwnd()
+        if not hwnd:
+            return False
+        self.hwnd = hwnd
+        self._resizing = True
+        log(f"Panel: redimensionado por «{e}».")
+        threading.Thread(target=self._resize_loop, args=(hwnd, e),
+                         daemon=True).start()
+        return True
+
+    def _resize_loop(self, hwnd, edge):
+        """Bucle de redimensionado: mueve los lados del borde `edge` con el ratón.
+
+        Réplica del bucle de ARRASTRE pero cambiando de tamaño: los lados que
+        toca `edge` siguen al cursor; los demás se quedan. El ancho/alto nunca
+        baja de 800x520 (se recorta por el lado que se arrastra, para que el lado
+        fijo no se menee). Una ventana MAXIMIZADA no se redimensiona (se
+        restauraría de golpe): para eso está el botón de la barra.
+        """
+        try:
+            hw = wintypes.HWND(hwnd)
+            if _user32.IsZoomed(hw):
+                return
+            _preparar_prototipos_ventana()
+            r = wintypes.RECT()
+            if not _user32.GetWindowRect(hw, ctypes.byref(r)):
+                return
+            p0 = _POINT()
+            if not _user32.GetCursorPos(ctypes.byref(p0)):
+                return
+            mv_l = "left" in edge
+            mv_r = "right" in edge
+            mv_t = "top" in edge
+            mv_b = "bottom" in edge
+            l0, t0, r0, b0 = r.left, r.top, r.right, r.bottom
+            flags = 0x0004 | 0x0010             # NOZORDER | NOACTIVATE
+            VK_LBUTTON = 0x01
+            while _user32.GetAsyncKeyState(VK_LBUTTON) & 0x8000:
+                p = _POINT()
+                if not _user32.GetCursorPos(ctypes.byref(p)):
+                    break
+                dx, dy = p.x - p0.x, p.y - p0.y
+                nl, nt, nr, nb = l0, t0, r0, b0
+                if mv_l:
+                    nl = l0 + dx
+                if mv_r:
+                    nr = r0 + dx
+                if mv_t:
+                    nt = t0 + dy
+                if mv_b:
+                    nb = b0 + dy
+                if nr - nl < _PANEL_MIN_W:
+                    if mv_l:
+                        nl = nr - _PANEL_MIN_W
+                    else:
+                        nr = nl + _PANEL_MIN_W
+                if nb - nt < _PANEL_MIN_H:
+                    if mv_t:
+                        nt = nb - _PANEL_MIN_H
+                    else:
+                        nb = nt + _PANEL_MIN_H
+                _user32.SetWindowPos(hw, None, nl, nt, nr - nl, nb - nt, flags)
+                time.sleep(0.008)
+        except Exception as e:
+            log(f"Panel: el redimensionado por «{edge}» falló ({e}).")
+        finally:
+            self._resizing = False
 
     def _normal_rect(self, hw):
         """Rectángulo que tendrá la ventana al restaurarla (rcNormalPosition)."""
@@ -4975,7 +5423,18 @@ def create_webview_panel(webview):
         html=relleno,
         js_api=PanelJS(host),
         width=1040, height=820,
-        min_size=(720, 560),
+        # Tamaño MÍNIMO del diseño: el panel se probó cómodo a 900x600 y
+        # 800x520, así que el suelo son 800x520 (antes 720x560, por debajo del
+        # ancho que el diseño necesita). Lo refuerza además el manejador de
+        # WM_GETMINMAXINFO que instala `_install_panel_min_size`, para que el
+        # bucle NATIVO de redimensionado no pueda colapsar el contenido.
+        min_size=(800, 520),
+        # CLAVE del arreglo: la ventana es SIN MARCO pero SÍ redimensionable.
+        # `resizable=True` es el valor por defecto, pero se deja explícito
+        # porque el redimensionado de verdad lo aporta el host (ver la nota de
+        # `_HIT_EDGE`): la franja del borde la detecta panel/desktop.js y el
+        # host arranca el bucle de tamaño nativo de Windows.
+        resizable=True,
         frameless=True,            # sin barra de Windows: la pone la página
         # El arrastre lo llevan SOLO los elementos con la clase
         # `pywebview-drag-region` (el título y el hueco vacío de la barra): con
@@ -5209,6 +5668,12 @@ class App:
         self.engine = config_get("engine", "auto")   # auto|vulkan|cuda|cpu
         self.engine_resolved = ""                     # motor efectivo
         self.engine_note = ""                         # aviso motor no disponible
+        # QUE GPU concreta usa el motor: 'auto' (dispositivo 0 del motor, la
+        # dedicada) o {'index': N}. En este equipo hay dos GPU Vulkan (una
+        # dedicada y una integrada) y el autor quiere poder elegir cual.
+        self.gpu_device = config_get("gpu_device", "auto")
+        self.gpu_device_resolved = "auto"             # indice efectivo o 'auto'
+        self.gpu_device_note = ""                     # aviso del dispositivo
         self.results = queue.SimpleQueue()
         self.hotkey_events = queue.SimpleQueue()
         self.delivery_results = queue.SimpleQueue()
@@ -5987,6 +6452,8 @@ class Overlay:
                 _get_server().stop()          # fuerza reinicio con el nuevo motor
                 resolved = pick_engine(name)
                 app.engine_resolved = resolved
+                _p, gi = gpu_device_pref(resolved)
+                app.gpu_device_resolved = gi if gi is not None else "auto"
                 model_path = ensure_model(MODELS.get(app.model or "small",
                                                      MODELS["small"]))
                 if resolved in ("vulkan", "cuda"):
@@ -5995,6 +6462,70 @@ class Overlay:
                 log(f"Motor activo: {engine_label(resolved)}")
             except Exception as e:
                 log(f"No se pudo cambiar el motor: {e}")
+
+        threading.Thread(target=work, daemon=True).start()
+        self.tray.refresh()
+
+    def rpc_gpu_device(self, value):
+        """POST {action:'gpu_device', value:{index:N}} o value:'auto': elige QUE
+        GPU concreta usa el motor (no la tecnologia). Guarda en config y
+        relanza el motor como on_engine. Si el indice no existe, cae a auto."""
+        engine = pick_engine(app.engine)
+        idx = None
+        if isinstance(value, dict):
+            idx = value.get("index")
+        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+            idx = int(value)
+        elif isinstance(value, str) and value.strip().lower() != "auto":
+            try:
+                idx = int(value.strip())
+            except (TypeError, ValueError):
+                idx = None
+        if idx is not None:
+            try:
+                idx = int(idx)
+            except (TypeError, ValueError):
+                idx = None
+        devs = (list_gpu_devices(engine)
+                if engine in ("vulkan", "cuda", "rocm") else [])
+        stored, resolved, note = "auto", "auto", ""
+        if idx is not None and any(d["index"] == idx for d in devs):
+            stored, resolved = {"index": idx}, idx
+            dev = next(d for d in devs if d["index"] == idx)
+            note = f"GPU elegida: {dev['name']} (dispositivo {idx})."
+        elif idx is not None:
+            note = (f"El dispositivo {idx} no existe entre los disponibles; "
+                    f"se usara Automatico.")
+        app.gpu_device = stored
+        app.gpu_device_resolved = resolved
+        app.gpu_device_note = note
+        config_set("gpu_device", stored)
+        log(f"Dispositivo GPU: {stored}" + (f" - {note}" if note else ""))
+        self.ui_events.put(("gpu_device", None))     # relanza en el hilo de Tk
+        return {"ok": True, "gpu_device": stored, "gpu_device_resolved": resolved,
+                "gpu_device_note": note, "engine": app.engine,
+                "engine_resolved": engine,
+                "devices": devs}
+
+    def apply_gpu_device(self):
+        """Relanza el motor para APLICAR el dispositivo GPU elegido. Igual que
+        on_engine: no cambia la tecnologia, solo QUE tarjeta usa."""
+        def work():
+            try:
+                _get_server().stop()
+                resolved = pick_engine(app.engine)
+                app.engine_resolved = resolved
+                _p, gi = gpu_device_pref(resolved)
+                app.gpu_device_resolved = gi if gi is not None else "auto"
+                model_path = ensure_model(MODELS.get(app.model or "small",
+                                                     MODELS["small"]))
+                if resolved in ("vulkan", "cuda"):
+                    _get_server().ensure(model_path, app.language, resolved)
+                app.status, app.status_color = app_status_ready(), "#4caf50"
+                log(f"Dispositivo GPU aplicado en {engine_label(resolved)} "
+                    f"(dispositivo {app.gpu_device_resolved}).")
+            except Exception as e:
+                log(f"No se pudo aplicar el dispositivo GPU: {e}")
 
         threading.Thread(target=work, daemon=True).start()
         self.tray.refresh()
@@ -6072,6 +6603,11 @@ class Overlay:
                                 or ENGINE_NOTE_BASE),
                 "engines": _available_engines(),
                 "engine_options": engine_options(),
+                # Que GPU CONCRETA usa el motor (no la tecnologia): preferencia
+                # guardada ('auto' o {'index':N}), indice efectivo y aviso.
+                "gpu_device": getattr(app, "gpu_device", "auto"),
+                "gpu_device_resolved": getattr(app, "gpu_device_resolved", "auto"),
+                "gpu_device_note": getattr(app, "gpu_device_note", ""),
                 "icon_version": icon_version(),
                 "models": model_options(),
                 "language": app.language, "sens": app.sens, "theme": app.theme,
@@ -6112,6 +6648,12 @@ class Overlay:
                 # apagada, `enabled` es False y no se ha consultado nada a la
                 # red; `progress` es 0..100.
                 "update": dict(UPDATE_STATE),
+                # Ajuste REAL de la comprobacion automatica: lo que hay ahora
+                # mismo en dicta_config.json. Se publica aparte para que el panel
+                # no tenga que espejar /state.update.enabled, que solo se
+                # rellena tras la PRIMERA comprobacion (y por eso mentia al
+                # arrancar: salia «off» con el ajuste encendido).
+                "check_updates": bool(config_get("check_updates", True)),
                 "queue": queue_for_state(),
                 "uploads": _uploads.snapshot(),
                 "meeting": _meeting.snapshot(),
@@ -6191,8 +6733,14 @@ class Overlay:
             return self.on_check_updates(value)
         if action == "check_update":
             # Boton "Comprobar ahora" del panel (equivale al POST de nivel
-            # superior): comprueba SOLO si el ajuste esta activo.
-            return {"ok": True, "update": check_update()}
+            # superior): respeta el ajuste; con value.force consulta igualmente
+            # aunque este apagado (accion explicita del usuario).
+            val = value
+            force = bool(val.get("force")) if isinstance(val, dict) else False
+            r = check_update(force=force)
+            ran = bool(force or r.get("enabled"))
+            return {"ok": ran and not bool(r.get("error")), "force": force,
+                    "update": r}
         if action == "paste_mode":
             # POST {action:"paste_mode", value:"auto|ctrl+v|ctrl+shift+v|
             # shift+insert"}: fuerza la combinacion del pegado automatico para
@@ -6216,6 +6764,14 @@ class Overlay:
                 self.panel.hwnd = hwnd
                 _panel_window_cmd(hwnd, str(value))
             return
+        if action == "gpu_device":
+            # POST {action:"gpu_device", value:{"index":N}} o value:"auto":
+            # elige QUE GPU concreta usa el motor (no la tecnologia). Persiste
+            # y relanza el motor como al cambiar de motor.
+            try:
+                return self.rpc_gpu_device(value)
+            except Exception as e:
+                return {"ok": False, "error": str(e)}
         if action in ("model", "engine", "language", "theme", "sens", "mic",
                       "dictionary", "meeting_source", "meeting_mic",
                       "island_pos", "island_palette", "voice_threshold",
@@ -6274,6 +6830,8 @@ class Overlay:
                     self.on_silence_wait(value)
                 elif kind == "engine":
                     self.on_engine(value)
+                elif kind == "gpu_device":
+                    self.apply_gpu_device()
                 elif kind == "language":
                     self.on_language(value)
                 elif kind == "dictionary":
@@ -6511,6 +7069,8 @@ def main():
             model_path = ensure_model(MODELS.get(app.model or "small", MODELS["small"]))
             engine = pick_engine(app.engine)
             app.engine_resolved = engine
+            _p, gi = gpu_device_pref(engine)
+            app.gpu_device_resolved = gi if gi is not None else "auto"
             log(f"Motor seleccionado: {engine_label(engine)} " +
                 ("(auto)" if app.engine == "auto" else ""))
             srv = _get_server()

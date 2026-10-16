@@ -2855,3 +2855,529 @@ enviar datos del usuario).
 **ARRANCADA y viva** desde `.tmp/clean104` (el `.exe` 1.0.4 congelado):
 `GET /state` **200**, `version="1.0.4"`. Restos de la prueba en `.tmp/`
 (`clean104/`, `helper_104_portable.cmd`, registros y receptores).
+
+## 60. Borrar un documento o una subida limpia TAMBIÉN su audio de trabajo en `audios/` (antes quedaba huérfano para siempre)
+
+**Problema.** Al borrar un documento o una subida, la tarjeta y sus ficheros
+borrables desaparecían, pero la **copia de trabajo del audio** que vive en
+`audios/` se quedaba **huérfana para siempre**: el backend no exponía ninguna
+acción que la borrara. `upload.remove` solo tocaba `uploads/` y `doc.delete`
+solo tocaba `textos/`. Medido en el equipo del autor: `audios/` con **35 `.wav`**
+frente a **1 documento** en `textos/`. Basura acumulada que el autor no podía
+quitar desde la app.
+
+**Cambio (solo `dicta.py`).**
+
+- `doc.delete` ahora borra el `.md` de `textos/` **y** su audio emparejado por
+  nombre base en `audios/` (`<base>.wav`) — para una reunión, la grabación
+  original. Mismo criterio de emparejamiento que ya usaban `doc.rename` y
+  `/download`.
+- `upload.remove` ahora borra el fichero de `uploads/` **y** la copia de trabajo
+  de esa subida en `audios/` (la que dejó `TranscribeQueue.add`), tomada de la
+  propia ficha persistente (campo `audio`).
+- Nuevo helper `_audios_ref(nombre)`: acepta **solo un nombre** (sin separadores
+  ni `..`; devuelve `""` si el fichero no existe) — nunca una ruta. La validación
+  de `doc.delete` se refuerza con `"/"`.
+- Nuevo helper `_remove_file(ruta)`: borra con unos pocos reintentos cortos,
+  porque en Windows no se puede borrar un fichero que otro hilo tiene abierto
+  (la cola de transcripción puede estar leyendo el audio justo al quitarlo).
+- **Acciones nuevas, a propósito** (no automáticas): `POST
+  {action:"audio.orphans"}` **solo lista** los audios de `audios/` que ya no
+  emparejan con ningún documento ni subida (`{ok,count,orphans}`), y `POST
+  {action:"audio.clean", value:"confirmar"}` los borra; sin `"confirmar"`
+  responde **400 "confirmacion requerida"**. **Los huérfanos que YA existían NO
+  se tocan** hasta que el autor lo pida expresamente: podrían ser grabaciones
+  suyas sin documento. Solo se limpia de ahora en adelante.
+
+**Verificación (a)–(d), con borrados reales y listados antes/después.**
+
+- Inicial: `audios/` **45 ficheros** (**35 `.wav`**), `textos/` **1** documento,
+  `uploads/` 1 mp3 + `uploads.json`.
+- **(a) Documento de reunión.** Creados `textos/zz-reunion-test60.md` +
+  `audios/zz-reunion-test60.wav`: `doc.delete` → **200**; el `.md` **y** el
+  `.wav` desaparecieron de `textos/` y `audios/`.
+- **(b) Subida ya transcrita.** Subido un wav real por multipart → cola `listo`
+  → documento `textos/zz-subida-test60.md`, fichero `uploads/03181b4bc9.wav` y
+  copia `audios/604b933350.wav`. `doc.delete` + `upload.remove` → **200/200**;
+  se fueron el `.md`, el fichero de `uploads/` **y** la copia de `audios/`.
+- **(c) Subida pendiente.** Subido un wav largo y quitado mientras la ficha
+  estaba **`transcribiendo`**: `upload.remove` → **200**; desaparecieron el
+  fichero de `uploads/` **y** su copia de `audios/`. (Matiz honesto: si la
+  transcripción ya había terminado en ese instante, su `.md` queda como un
+  documento normal y se borra con `doc.delete`, que es lo que hace el panel.)
+- **(d) Preexistentes intactos.** Antes y después: **35 `.wav`**, **0
+  desaparecidos**. `audio.orphans` listó **44** huérfanos **sin borrar ninguno**;
+  `audio.clean` sin confirmación → **400** y el recuento de `.wav` **sin
+  cambios**.
+
+**Comprobado además que no se rompe:** `GET /state` **200** con **todas** sus
+claves (`uploads`, `docs`, `queue`, `update`, `meeting`, `levels`, `hotkeys`,
+`mic_test`, `version`, `st`, `status`… y la referencia `src` del audio),
+`/panel/icon.png` (PNG, 200), `/download?kind=md` (200), `/audio` (200),
+`doc.rename` ida y vuelta (mueve `.md` **y** `.wav`), validación de nombres
+(`doc.delete`/`upload.remove` con travesía → **400/404**).
+
+**No se tocó.** `panel/*`, `dicta_ui.py`, `dicta_icon.py`, el cierre limpio
+(`shutdown_service` libera la VRAM), la instancia única, los atajos, `/state`,
+`MicTest`, la clase de reunión (ganancia, mezclador, `_normalize_wav`,
+párrafos), el pegado por destino ni la comprobación de versión (activada por
+defecto y sin enviar datos del usuario).
+
+**Aviso.** No se publicó ninguna release ni se hizo push. La app quedó
+**ARRANCADA y viva** desde el **código fuente**
+(`.venv/Scripts/pythonw.exe dicta.py`): `GET /state` **200**, `version="1.0.4"`.
+Restos de la prueba en `.tmp/` (`restart60*.py`, `verify60*.py`, `verify61.py`,
+`smoke62.py`, `dicta.py.bak_60`, `*_out.json`). En paralelo había otro agente
+trabajando en `panel/*`; no se tocó nada de ahí.
+
+---
+
+## 61. Buscar e instalar actualizaciones A MANO aunque la comprobación automática esté apagada; `/state` publica el ajuste REAL y el interruptor del panel ya no miente al arrancar
+
+**Problema.** El autor quiere poder **buscar e instalar actualizaciones a mano**
+con el enlace «Actualizar» del panel **aunque la comprobación automática esté
+apagada** (literalmente su caso: «actualización automática desactivada»). Pero
+el motor lo impedía de raíz, medido: con `check_updates` apagado,
+`check_update()` devolvía `_update_blank(enabled=False)` **sin hacer ni una
+llamada de red**, y `POST {action:"update"}` respondía
+`{ok:false,error:"comprobacion desactivada"}`. El enlace manual no podía ni
+buscar ni instalar. Además `/state` **no publicaba** el ajuste automático: el
+panel espejaba `update.enabled`, que sale en **`off`** (False) hasta la PRIMERA
+comprobación **aunque el ajuste esté ACTIVADO de fábrica**, así que el
+interruptor mentía al arrancar.
+
+**Cambio (solo `dicta.py` y `panel/app.js`).**
+
+- **Búsqueda forzada.** `check_update(force=False)` acepta un modo FORZADO:
+  `POST {action:"check_update","value":{"force":true}}` consulta la API pública
+  de GitHub **aunque el ajuste esté apagado** (acción EXPLÍCITA del autor, no
+  una comprobación de fondo). Sin `force` el comportamiento NO cambia: con el
+  ajuste apagado sigue saliendo ANTES de tocar la red. El handler de `POST` lee
+  ahora `value.force` (antes ignoraba cualquier `value`) y devuelve `ok`,
+  `force` y `update`.
+- **Instalación manual siempre aceptada.** `POST {action:"update"}` (y
+  `apply_update()`) ya **no** se bloquean por el ajuste: es explícito. Solo exige
+  que haya una versión nueva conocida (`available`), que puede haber rellenado
+  una búsqueda forzada previa. Sin versión nueva responde **200
+  `{ok:true,accepted:true,started:false,note:"no hay version nueva…"}`**
+  (aceptado, sin instalar nada).
+- **`/state` con la verdad del ajuste.** `panel_state` publica la clave nueva
+  **`check_updates`** (lo que hay en `dicta_config.json`), y
+  `UPDATE_STATE["enabled"]` pasa a reflejar también ese ajuste real (una sola
+  verdad).
+- **Panel (`app.js`).** `updEnabled()` lee `/state.check_updates` (con respaldo
+  local `state.check_updates`, defecto `true`, solo antes del primer `/state`)
+  en vez de espejar `update.enabled`; el interruptor ya no miente al arrancar.
+  El enlace «Actualizar» (`runUpdateSearch`) llama a `check_update` **con
+  `force:true`**. No se rediseñó nada.
+
+**Verificación, con medidas; config del autor RESTAURADO a ACTIVADO.**
+
+Con el ajuste **APAGADO** (`POST check_updates false` → `/state.check_updates=false`):
+
+- Búsqueda FORZADA `{"force":true}` → **200**, `ok:true`, `force:true`, latencia
+  **0.417 s** (salida real a GitHub), `latest:"1.0.4"`, `available:false`,
+  `error:""` → **al día** (la app va por **1.0.5**).
+- Búsqueda NORMAL (sin `force`) con el ajuste apagado → `ok:false`, latencia
+  **0.002 s**, `latest:""`, `checked_at:""` → **NO toca la red**.
+- `POST {action:"update"}` → **200** `{ok:true,accepted:true,started:false,
+  note:"no hay version nueva…"}`, **sin** `"comprobacion desactivada"`; la app
+  sigue viva y `applied:""` (no instaló nada).
+
+Con el ajuste **ENCENDIDO** (restaurado): búsqueda normal → **200**, `ok:true`,
+latencia **0.294 s**, `latest:"1.0.4"`, `error:""` → comportamiento intacto;
+`POST update` → mismo criterio aceptado.
+
+`/state`: `check_updates=true` con el ajuste encendido y `=false` apagado (al
+arrancar ya aparece el valor real, no un espejo). **DOM** (Chrome headless
+propio por CDP, cargando `/panel/`): `#updSwitch[aria-checked]` = **"true"** con
+el ajuste encendido y **"false"** apagado, coincidiendo con
+`/state.check_updates` y con `updEnabled()`; probado además que con
+`update.enabled=false` y el ajuste ON el interruptor queda en **"true"** (el
+fallo original queda cerrado). Título de página: «dicta — Ajustes».
+
+**Comprobado que no se rompe:** `GET /state` **200** con **todas** sus claves
+(`update`, la nueva `check_updates`, `queue`, `uploads`, `meeting`, `levels`,
+`mic_test`, `version`…), `/download?doc=…&kind=md|txt` (**200**, con
+`Content-Disposition`), `/audio?name=…` (**200**), `/panel/icon.png` (**200**),
+`audio.orphans` (**200**, solo lee), `mic_test` publicado.
+
+**No se tocó.** El resto de `panel/*` (solo se editó `app.js`), `dicta_ui.py`,
+`dicta_icon.py`, la franja de versión y su diálogo de notas, el diálogo de
+apagado, el medidor horizontal, el botón de apagar, el borrado de documentos y
+subidas con su limpieza de audios, `audio.orphans`/`audio.clean`, el cierre
+limpio con VRAM, la instancia única, los atajos, el pegado, `MicTest`,
+`doc.rename`, `/download` ni `/audio`.
+
+**Aviso.** No se publicó ninguna release ni se hizo push. La app quedó
+**ARRANCADA y viva** desde el **código fuente**
+(`.venv/Scripts/pythonw.exe dicta.py`): `GET /state` **200**, `version="1.0.5"`,
+`check_updates=true` (como estaba). `dicta_config.json` quedó **idéntico** al de
+partida (copia en `.tmp/dicta_config.bak_task`). Restos de la prueba en `.tmp/`
+(`verify_task.py`, `verify_task_out.json`, `dom_check.py`, `dom_probe.py`,
+`dom_out.json`).
+
+---
+
+## 62. Elegir QUÉ GPU concreta usa el motor (no solo la tecnología): dos GPU Vulkan en el equipo y el autor quiere decidir en cuál corre el modelo
+
+**Problema reportado:** *"en el motor puedo seleccionar entre las tecnologías de
+la GPU (Vulkan, no CUDA, CPU), pero no puedo seleccionar si tengo dos gráficas,
+una integrada y una dedicada, y quiero que el modelo se ejecute en la integrada
+y no en la dedicada; no tengo esa opción"*.
+
+**Diagnóstico:** `/state.engine_options` solo ofrecía la TECNOLOGÍA
+(Automático/Vulkan/CUDA/ROCm/CPU). El motor (whisper.cpp, `whisper-server.exe`
+con backend Vulkan) arrancaba SIEMPRE con su dispositivo por defecto —el `0`, la
+GPU **dedicada**— porque nunca se le pasaba un dispositivo. En este equipo hay
+**dos** GPU Vulkan, así que faltaba poder elegir cuál.
+
+**Cambios (dicta.py):**
+- **Enumeración real de dispositivos.** `list_gpu_devices(engine)` ejecuta el
+  binario del motor con `--help` (≈0,2 s, no carga modelo) y parsea las líneas
+  que ggml imprime al inicializar el backend (`ggml_vulkan: N = NOMBRE |
+  detalles`). Devuelve `[{index, name, desc}]`. **Cacheado** (`/state` se
+  sondea muy a menudo: no se lanza un proceso por petición).
+- **`/state`.** Cada opción de `engine_options` lleva ahora su lista
+  **`devices`** (vacía en las que no aplican: CUDA/ROCm/CPU/Automático) además
+  de las claves nuevas **`gpu_device`** (preferencia guardada: `"auto"` o
+  `{"index":N}`), **`gpu_device_resolved`** (índice efectivo o `"auto"`) y
+  **`gpu_device_note`**.
+- **Acción nueva.** `POST {"action":"gpu_device","value":{"index":N}}` y también
+  `{"value":"auto"}`: guarda en `dicta_config.json` (`gpu_device`) y **relanza
+  el motor** igual que al cambiar de motor (mismo camino que `on_engine`). Si el
+  índice **no existe** entre los dispositivos reales, **cae a `auto`** y lo dice
+  en `gpu_device_note`.
+- **Aplicarlo DE VERDAD al arrancar el motor.** `WhisperServer.ensure` pasa
+  **`--device N`** al `whisper-server` cuando `gpu_device` no es `auto` (sin el
+  flag, el motor usa su dispositivo `0`). El stderr del motor se guarda en
+  `whisper_server.log` (prueba de en qué GPU carga). *Se comprobó que la vía
+  fiable con este binario es el flag `--device N`* (también funciona
+  `GGML_VK_VISIBLE_DEVICES=N`, verificado; se usa el flag, que nombra el backend
+  en el log). `auto` **no cambia el comportamiento actual** (dispositivo 0).
+
+**Verificación, con medidas.**
+
+- **(a) Listado real = `/state`.** `--help` del binario reporta **2** GPU
+  Vulkan; `/state.engine_options[vulkan].devices` publica exactamente las
+  mismas: `0 = AMD Radeon RX 9070 (AMD proprietary driver) | uma: 0` (dedicada)
+  y `1 = AMD Radeon(TM) Graphics (AMD proprietary driver) | uma: 1` (integrada).
+  La línea «uma: 1» identifica la integrada.
+- **(b) Elegir la INTEGRADA y demostrar la carga ahí.** `POST gpu_device
+  {"index":1}` → `gpu_device_resolved=1`; el **log del motor**
+  (`whisper_server.log`) pasa a: `whisper_init_with_params_no_state: gpu_device
+  = 1` y `whisper_backend_init_gpu: using Vulkan1 backend` (antes, en `auto`,
+  `using Vulkan0 backend`). **Rendimiento medido** (misma entrada, modelo
+  `large-v3-turbo`, audio de prueba 113 s): dedicada **1,58 s**
+  (~72× tiempo real) vs integrada **37,6–41,6 s** (~2,8× tiempo real), o sea
+  **~24× más lenta**. **VRAM por tarjeta medida** con el contador de Windows
+  `\GPU Adapter Memory(*)\Dedicated Usage`: el adaptador de la dedicada pasa de
+  **13.177 MB (modelo en la dedicada) a 12.292 MB (modelo en la integrada)**,
+  **−886 MB**, que aparecen (+850 MB) en el adaptador de la integrada. Es decir,
+  la dedicada **libera el modelo** al no usarse (medible: sí se puede por
+  tarjeta con ese contador; se da el delta, no un mapa de nombre↔LUID porque el
+  contador usa LUIDs opacos).
+- **(c) Transcripción REAL con la integrada.** El modelo **SÍ carga y
+  transcribe** en la integrada (sin error de memoria; UMA = RAM del sistema).
+  Texto real (audio `Prueba_1.wav`, 73,5 s): *"A ver, probando la transcripción,
+  tiempo real, vamos a ver acá. Falta 100% lo que vamos a ver hoy, ni siquiera
+  100% lo real, sino usando NGAM… una herramienta de Jentman Programming…"* →
+  legible. **Aviso honesto:** en audio largo (113 s, una sola pasada) la
+  integrada entró en **bucle de repetición** ("…el mismo uso de gp…" repetido),
+  mientras que la dedicada dio la transcripción limpia; y en `Prueba_1.wav`
+  hubo sustituciones ("Dipsy" por "DeepSync"). O sea: **funciona, pero con más
+  latencia y peor calidad** en este equipo —es el precio real de forzar la
+  integrada—. No se forzó nada: es el resultado medido.
+- **(d) Vuelta a `auto`.** `POST gpu_device "auto"` → `gpu_device_resolved="auto"`,
+  log de vuelta a **`using Vulkan0 backend`**, y el rendimiento vuelve al de la
+  dedicada (55 s → **0,49–0,50 s**; 73 s → **0,90–0,93 s**). `dicta_config.json`
+  queda con `gpu_device:"auto"`.
+- **(e) Fallback.** `POST {"index":9}` → `gpu_device:"auto"`,
+  `gpu_device_note:"El dispositivo 9 no existe entre los disponibles; se usara
+  Automatico."`.
+
+**Comprobado que no se rompe:** `GET /state` **200** con **todas** sus claves
+(`uploads`, `docs`, `queue`, `check_updates`, `engine_options`, `meeting`,
+`levels`, `mic_test`, `version`, y las nuevas `gpu_device*`);
+**cierre limpio que libera VRAM** (`POST quit` → puerto 47810 caído, sin
+`whisper-server` de dicta vivo, VRAM de la dedicada **14.064 → 12.170 MB**);
+**instancia única** (segundo lanzamiento → «dicta ya estaba abierto» y sale);
+**atajos**, **pegado**, **MicTest** (`mic.test start/stop` OK), **doc.rename**
+(md + wav emparejado), **`/download`** md/txt (**200**, 10.391 B), **`/audio`**
+(**200**, 96.044 B), **búsqueda manual forzada** (`check_update {"force":true}`
+→ **200**, 0,37 s, `latest:"1.0.4"`) y **borrado con limpieza de audios**
+(`doc.delete` → desaparecen el `.md` y su `.wav`; `audio.orphans` sigue
+funcionando).
+
+**No se tocó.** `panel/*`, `dicta_ui.py`, `dicta_icon.py`, y el resto del motor
+(solo se añadió la elección de dispositivo y su enumeración).
+
+**Aviso.** No se publicó ninguna release ni se hizo push. La app quedó
+**ARRANCADA y viva** desde el **código fuente**
+(`.venv/Scripts/pythonw.exe dicta.py`): `GET /state` **200**, `version="1.0.5"`,
+motor `vulkan` en `auto` (`using Vulkan0 backend`, la dedicada) y
+`gpu_device:"auto"`. `dicta_config.json` quedó **igual que al partir** (copia en
+`.tmp/dicta_config.bak_gpudev`) más la clave nueva `gpu_device:"auto"`. Restos de
+la prueba en el scratch (`devtest.sh`, `dev_bench.py`).
+
+---
+
+## 63. La ventana del PANEL se puede REDIMENSIONAR con el ratón por los BORDES y las ESQUINAS (sin perder el aspecto sin marco ni la barra propia)
+
+**Problema reportado:** *«La ventana no deja redimensionarla, ¿por qué?»* (la del
+panel de ajustes, la que abre Ctrl+Alt+P).
+
+**Diagnóstico (con el código delante y medido):**
+- La ventana la crea `create_webview_panel()` (dicta.py) con
+  `webview.create_window(...)`: `frameless=True`, `easy_drag=False`,
+  `shadow=False` y `min_size=(720,560)`. **No había NINGÚN flag de redimensionado
+  activo y, al ser sin marco, Windows no dibuja la franja de borde ni el form
+  tiene el estilo de tamaño (`WS_THICKFRAME`)**: no había bordes que agarrar. El
+  arrastre desde la barra SÍ funcionaba porque está hecho a mano
+  (`WebViewPanelHost.start_drag` / `_drag_loop`), pero eso solo MUEVE.
+- La vía «recomendada» para devolver los bordes —contestar `WM_NCHITTEST` con
+  `HTLEFT/HTRIGHT/...` en la franja del borde— **no puede funcionar en ESTA
+  ventana, y está medido**: el control de WebView2 (clase
+  `Chrome_RenderWidgetHostHWND`) cubre TODO el cliente, de borde a borde, así que
+  `WindowFromPoint` en los cuatro bordes y las cuatro esquinas devuelve ESE hijo
+  y nunca el form de nivel superior: los mensajes de ratón no llegan al form y su
+  `WM_NCHITTEST` no se dispara jamás.
+- Se probó además la vía «nativa» de mandar `WM_NCLBUTTONDOWN` con el código HT
+  del borde (el truco clásico del movimiento por `HTCAPTION`): **medido, NO
+  redimensiona esta ventana** (arrastrando los cuatro bordes y una esquina:
+  ΔW=ΔH=ΔX=ΔY=**0**): sin `WS_THICKFRAME` Windows no entra en su bucle modal de
+  tamaño.
+
+**Cambios:**
+- **dicta.py — `create_webview_panel()`:** `min_size=(800,520)` (antes 720×560,
+  por debajo del ancho que el diseño necesita) y `resizable=True` explícito, con
+  el porqué. Nada más cambia en la creación de la ventana.
+- **dicta.py — `WebViewPanelHost.resize_window(edge)` + `_resize_loop`:** el host
+  lleva el bucle de tamaño él mismo (igual que ya lleva el de ARRASTRE): guarda
+  rectángulo y cursor al empezar y, mientras el botón siga pulsado, coloca la
+  ventana moviendo SOLO los lados de ese borde con `SetWindowPos`, con el
+  **mínimo 800×520** (recortado por el lado que se arrastra, para que el lado
+  fijo no se menee). Una ventana maximizada se deja como está (redimensionarla la
+  desmaximizaría de golpe).
+- **dicta.py — `_install_panel_min_size(hwnd)`:** subclasifica el WndProc del form
+  (`SetWindowLongPtrW` + `CallWindowProcW`) para garantizar en `WM_GETMINMAXINFO`
+  un mínimo de 800×520 — mensaje que SÍ llega al form, al contrario que
+  `WM_NCHITTEST`.
+- **panel/desktop.js — `buildResizeEdges()`:** ocho tiras INVISIBLES
+  (`position:fixed`, 6 px, z-index 70) en los bordes del viewport, cada una con su
+  cursor CSS (`n-resize`, `e-resize`, `nwse-resize`…); su `mousedown` pide el
+  redimensionado por ese borde (`pywebview.api.resize_window(edge)`). Son
+  `position:fixed`, así que **no entran en el flujo del documento**.
+
+**Verificación (medida, no «debería»).**
+
+1. **Las tiras existen y es donde se pulsa.** En el DOM real de WebView2 (medido
+   con un gancho temporal, ya retirado), `document.querySelectorAll('.dtresize').length`
+   = **8**, y `elementFromPoint` en los 8 puntos del borde devuelve
+   `dtresize#left`, `#right`, `#top`, `#bottom`, `#topleft`, `#topright`,
+   `#bottomleft`, `#bottomright`. Quitando las tiras, esos mismos puntos devuelven
+   los elementos de debajo (`rail`, `dtbar`, `app-foot`, `pane`), lo que confirma
+   que las tiras están EXACTAMENTE en el filo.
+
+2. **Cableado JS→backend por los 8 bordes.** Un `mousedown` real sobre cada tira
+   llega al host: `dicta.log` registra **`Panel: redimensionado por «left» /
+   «right» / «top» / «bottom» / «topleft» / «topright» / «bottomleft» /
+   «bottomright»`** (los ocho).
+
+3. **Redimensionado real y mínimo (arrastre con el ratón, coordenadas
+   GetWindowRect ANTES → DESPUÉS, ventana 1100×760 en (300,140)):**
+
+   | borde arrastrado | antes | después | ΔW | ΔH | ΔX | ΔY |
+   |---|---|---|---|---|---|---|
+   | inferior | (300,140,1400,900) | (300,140,1400,990) | 0 | **+90** | 0 | 0 |
+   | esquina inf. der. | (300,140,1400,900) | (300,140,1510,980) | **+110** | **+80** | 0 | 0 |
+   | esquina sup. izq. | (300,140,1400,900) | (190,60,1400,900) | **+110** | **+80** | **−110** | **−80** |
+   | mover desde la barra | (300,140,1400,900) | (390,200,1490,960) | 0 | 0 | **+90** | **+60** |
+
+   Mínimo: arrastrando el borde derecho hacia dentro → ancho **clavado en 800**;
+   por abajo → alto **clavado en 520**; por la esquina inf. der. → **800×520**
+   exactos (no baja de ahí). Maximizar/restaurar intacto: normal
+   `(300,140,1324,921)` → maximizada `(0,0,1920,1080)` → restaurada
+   `(300,140,1324,921)`.
+   *(Los cuatro arrastres con ratón son de la primera pasada; al repetir el robot
+   más tarde la inyección sintética de este host dejó de registrarse —medido:
+   `SendInput` devuelve 1 pero `GetAsyncKeyState` no ve nunca el botón—, así que
+   el cableado de los 8 bordes se re-verificó de forma determinista con el
+   `mousedown` sobre cada tira del punto 2. La app y el código son los mismos.)*
+
+4. **El diseño NO cambia (mismo tamaño, con tiras → sin tiras):** todas las
+   referencias salen IDÉNTICAS byte a byte. Raíl `[0,36,212,689]` (**212 px de
+   ancho**, igual a 800, 1024 y 1500 px de ventana); pie `[0,725,1024,56]` (alto
+   **56**); espera: carril `160×8`, tramo `160×8`, tirador `2×18` (solo carril +
+   tramo + tirador); medidor de umbral `[555,591,349,26]` con barras `341×18` y
+   perilla `2×20`; botón de apagar `[20,737,32,32]` con fondo
+   `rgba(0,0,0,0)`, borde `0px` e icono `rgb(215,0,21)`; selector del motor y
+   tarjeta gráfica, AMBOS en el mismo raíl `x=758, ancho=216`. **Ninguna cambia.**
+   *(La referencia 248/1128 que citabas no coincide con lo que mide el panel hoy:
+   el raíl es 212 px y es fijo —no depende del ancho—; probablemente venga de otra
+   anchura de ventana o sesión. Lo que importa: es IDÉNTICO antes y después.)*
+
+5. **Reacomodo a otros tamaños:** a **800×520**, ningún elemento rebasa el ancho
+   (espera acaba en 691, medidor en 680, selector en 750; raíl 0–212) y el pie
+   queda fijo abajo `[0,464,800,56]`; la sección se desplaza en vertical, como ya
+   hacía cuando falta altura. A **1500×1000**, el raíl sigue en 212 y el pie en
+   56, sin que nada se solape (medido). El cambio de tamaño no rompe el contenido.
+
+**Comprobado que no se rompe.** Arranque desde el **código fuente**
+(`.venv/Scripts/pythonw.exe dicta.py`): log `Panel: tamaño mínimo 800x520 fijado
+(WM_GETMINMAXINFO)`, `Panel: esquinas redondeadas (DWM)`, `Panel: barra integrada
+inyectada`, los **cinco atajos** registrados (`alt+q`, `ctrl+e`, `ctrl+alt+p`,
+`ctrl+alt+r`, `ctrl+alt+t`), `GET /state` **200** y el raíl con sus **6
+secciones**. La barra propia sigue pintada y su arrastre sigue moviendo la ventana
+(+90/+60, sin cambiar de tamaño). El `mousedown` de la barra (`dtbar-drag`) sigue
+llamando a `drag_window`.
+
+**No se tocó.** `panel/index.html` (mtime 10:54), `panel/style.css` (10:55),
+`panel/app.js` (11:00) y `dicta_ui.py` / `dicta_icon.py`: **sin cambios** —
+sus marcas de tiempo son ANTERIORES a esta sesión (que empezó ~11:20), así que no
+los he rozado. Los únicos ficheros que toqué son `dicta.py`, `panel/desktop.js` y
+`CHANGES.md`. El único JS tocado es `panel/desktop.js` y solo AÑADE las tiras
+(posición fija, fuera del flujo). El gancho temporal de medición en el servidor
+de control se retiró: no queda ningún `jsdbg` en `dicta.py`.
+
+**Nota (borde superior y botones de la barra).** La tira superior va por encima de
+la barra (z-index 70 > 60), así que los **6 px de arriba** de los botones de
+minimizar/maximizar/cerrar empiezan un REDIMENSIONADO en vez de pulsarlos — igual
+que en Windows, donde el filo de arriba de la barra de título es el borde de
+tamaño. El resto de cada botón (30 de sus 36 px) se pulsa con normalidad, y la
+zona de arrastre de la barra queda por debajo, intacta.
+
+**Aviso.** No se publicó nada ni se hizo push. La app quedó **ARRANCADA y viva**
+desde el código fuente: `GET /state` **200**, `version="1.0.5"`.
+
+---
+
+## 64. Reempaquetado portable 1.0.5: ventana WebView2, transcripción de punta a punta, cierre limpio, pegado en consola y app normal, y el AYUDANTE nuevo van DENTRO del `.exe` (verificado de punta a punta)
+
+**Objetivo.** Recompilar el ejecutable portable con el código (ya terminado) de
+esta tanda y dejar listo el paquete `dicta-portable-1.0.5-windows-x64.zip`, sin
+volver a subir la versión (ya era `1.0.5`) y sin tocar los ZIP anteriores.
+
+**Cambios:**
+
+- **`dicta.py`:** NINGUNO. `VERSION = "1.0.5"` (línea 233) ya era la correcta;
+  comprobado antes y después: `GET /state` publica `version="1.0.5"`. No se subió
+  la versión otra vez.
+- **Build:** `./.venv/Scripts/python.exe -m PyInstaller --noconfirm --clean
+  dicta.spec` (el shim `pyinstaller.exe` sigue roto). `uac_admin=False`
+  (`asInvoker`), `console=False`. `dicta.exe.config` viaja en la RAÍZ de
+  `dist/dicta` (TOC `EXECUTABLE` del spec) para que .NET cargue
+  `loadFromRemoteSources` y WebView2 arranque. El modelo de fábrica
+  (`models/ggml-small-q5_1.bin`, 190.085.487 B) se copia al lado del `.exe`.
+- **`dicta.spec` / `build_exe.bat`:** sin cambios (la receta que ya funcionaba).
+
+**Verificación (medida, no «debería»).**
+
+1. **Limpieza previa.** Se mataron las instancias sueltas de intentos
+   anteriores. Se hizo por la vía limpia: `POST {"action":"quit"}` a la API de la
+   instancia que estaba en curso (el `quit` por la ruta `/quit` NO es más que una
+   acción vacía: hay que mandar `{"action":"quit"}`, que es lo que dispara
+   `os._exit` tras `shutdown_service`). Tras el quit no quedaban procesos
+   `dicta.exe`/`whisper-server.exe` ni sockets en `47123`/`47801`/`47810`.
+
+2. **Carpeta limpia y entorno saneado.** El `.exe` se arrancó desde una copia
+   limpia del paquete en `%TEMP%\dicta_clean` con
+   `env -u PYTHONPATH -u VIRTUAL_ENV -u PYTHONHOME …`. `dicta.log`:
+   `Panel: backend WebView2 (pywebview) — ventana sin marco, barra integrada en
+   la página`, `Panel abierto (WebView2, sin barra nativa)`, y seis procesos
+   `msedgewebview2` hijos. `GET /state` **200**, `version="1.0.5"`,
+   `engine_resolved="vulkan"`, `st="idle"`, `elevado: no`.
+
+3. **Transcripción REAL de punta a punta.** `POST` multipart con un `.wav`
+   → `{"ok":true,"saved":1}`; el estado de la subida recorre
+   **`pendiente` → `transcribiendo` → `listo`** (el `pendiente` se ve en la
+   instantánea que devuelve la subida; luego la traza por id captura
+   `transcribiendo` y `listo`). Documento generado en `textos/`:
+   **«El sistema interno se llama SAFIROK y guarda notas de la reunión.»**
+   (audio guardado en `audios/<id>.wav`, entrada en `uploads/`).
+
+4. **Cierre limpio.** `POST {"action":"quit"}` → `dicta.log`:
+   `Cierre limpio (salida): liberando GPU y parando servicios...` y
+   `Cierre limpio: GPU liberada y sin procesos whisper vivos.`. En ~4 s no
+   quedaba ningún proceso `dicta`/`whisper` y los puertos `47123`/`47801`/`47810`
+   quedaron libres (sin `whisper-server` residente, la VRAM se suelta).
+
+5. **Pegado automático (dos carriles).**
+   - **Consola en modo crudo.** Un lector con `SetConsoleMode` sin
+     `ENABLE_LINE_INPUT`/`ENABLE_PROCESSED_INPUT`/`ENABLE_ECHO_INPUT`, en una
+     `ConsoleWindowClass`. Con esa ventana en primer plano, `POST test` →
+     `dicta.log`: `Pegado (buffer de consola) enviado a [console:
+     ConsoleWindowClass / python.exe]` y el lector recibió **`prueba dicta 123`**
+     en su buffer de entrada.
+   - **Aplicación normal.** Una ventana Win32 estándar con un control `EDIT`
+     (clase ajena a consola/terminal/Chromium → carril `ctrl+v`). Con ella en
+     primer plano, `POST test` → `dicta.log`: `Pegado (ctrl+v) enviado a
+     [normal: DictaPasteTestWnd6 / python.exe]`, y el control leyó
+     **`prueba dicta 123`** (`WM_GETTEXT`). *(Primera pasada: el control se creó
+     con el bit `ES_READONLY` por un error de estilo del banco de pruebas, así que
+     rechazaba el pegado; corregido el estilo, el texto entra. Las teclas sí
+     llegaban desde el primer momento: el `EDIT` recibía `WM_KEYDOWN` de
+     Ctrl (0x11) y V (0x56) y `WM_CHAR 0x16`.)*
+
+6. **`dist/dicta` y `_internal/panel`.** El paquete contiene EXACTAMENTE
+   `dicta.exe` + `dicta.exe.config` + `_internal/` + `models/ggml-small-q5_1.bin`,
+   con **una sola** copia de `panel/` (en `_internal/panel/`) y sin copias
+   viejas. Los cuatro ficheros del panel COINCIDEN (md5) entre disco y paquete:
+
+   | fichero | md5 (disco == `_internal/panel/`) |
+   |---|---|
+   | `index.html` | `ea69ede5285aa923a9b56c4384cf2ccd` |
+   | `app.js` | `2f71724d75ae9c44e335b6739694274f` |
+   | `style.css` | `e60b4de4cc8d55479dd49bec0bbcc62f` |
+   | `desktop.js` | `30b963c5a2654899c54ae2d83ee91c1a` |
+
+7. **Resizable (bordes del panel).** En el `.exe` congelado, el árbol de
+   accesibilidad del panel muestra las **OCHO tiras invisibles** del
+   redimensionado (elementos `Group` de 6 px en `top`/`bottom`/`left`/`right` y
+   las cuatro esquinas), y un `mousedown` real sobre la tira derecha dispara el
+   cableado JS→backend: `dicta.log` registra `Panel: redimensionado por «right».`
+   **Lo que NO se pudo medir aquí:** el cambio de tamaño por arrastre con el
+   ratón. En esta sesión (sin autor delante, escritorio no interactivo) la
+   inyección de ratón no mantiene el botón pulsado dentro de WebView2
+   (`SendInput` reporta éxito pero el `mousedown` del DOM no llega durante el
+   arrastre; `GetAsyncKeyState` no ve el botón), así que `GetWindowRect` no
+   cambia: `(408,107,1432,888)` antes y después. El cableado y las tiras SÍ se
+   verificaron (punto anterior); el arrastre geométrico ya quedó medido en la
+   entrada **63**.
+
+8. **AYUDANTE DE ACTUALIZACIÓN (volcado, sin aplicarlo).** El paquete lleva el
+   ayudante NUEVO: `_helper_script(...)` genera un `.cmd` **desacoplado** (espera
+   a que la app cierre por `tasklist /FI "PID eq <pid>"`, con tope de 90 s),
+   sustituye el paquete con `robocopy /E /XF dicta_config.json update.log dicta.log
+   dicta_crash.log`, relanza el `.exe` y **deja registro por pasos en
+   `update.log`** (iniciado / paquete / destino / app cerrada / copia intento N
+   rc= / sustituido / relanzada / terminado, y las ramas `copy_failed` y
+   `app_alive`). Se volcó íntegro (50 líneas) solo para comprobarlo; **no se
+   aplicó** ninguna actualización.
+
+9. **Comprobación de versiones.** Con el ajuste activado, el `.exe` consulta la
+   API pública de GitHub y `dicta.log` anota:
+   `Actualizaciones: ultima 1.0.4 (ya al dia); consulta anonima, sin datos del
+   usuario.` — la última release es `1.0.4`, así que **no se anuncia a sí mismo**
+   ninguna actualización (está en `1.0.5`).
+
+10. **ZIP de release.** `dist/dicta-portable-1.0.5-windows-x64.zip` contiene el
+    contenido del paquete (1077 entradas): `dicta.exe`, `dicta.exe.config`,
+    `_internal/` y `models/` (con `models/ggml-small-q5_1.bin`). `testzip` sin
+    entradas corruptas. **Sin datos del usuario**: ni `audios/`, `textos/`,
+    `uploads/`, `.tmp/`, ni `dicta.log`, `whisper_server.log`, `update.log`,
+    `dicta_crash.log` ni `dicta_config.json`. Los ZIP anteriores (1.0, 1.0.1,
+    1.0.2, 1.0.3, 1.0.4) no se tocaron.
+
+    | ruta | tamaño (bytes) | sha256 |
+    |---|---|---|
+    | `dist/dicta-portable-1.0.5-windows-x64.zip` | 261.461.757 | `018a99e6c809aa26bf9ea87bb08d4094f75a82ad88b88f9f67eda79598faf7b1` |
+
+**No se tocó.** `panel/*`, `dicta_ui.py`, `dicta_icon.py`, `README.md`,
+`CHANGELOG.md` y los ZIP anteriores. Los únicos ficheros modificados son los
+permitidos: `dicta.py` (solo comprobado, sin cambios), `dicta.spec`,
+`build_exe.bat` (sin cambios) y `CHANGES.md`.
+
+**Aviso.** No se publicó nada ni se hizo push. Al terminar queda **UNA sola
+instancia VIVA** del `.exe` congelado, arrancada desde la carpeta limpia:
+`GET /state` **200**, `version="1.0.5"`.

@@ -140,9 +140,20 @@ const I18N = {
     "ui.updDone": "Actualizado",
     "ui.updFailed": "No se pudo comprobar",
     "ui.updateNow": "Actualizar",
+    /* acción manual de la franja: el enlace PREGUNTA antes de buscar, enseña
+       «Buscando…» y luego el resultado real; con versión nueva, «Instalar». */
+    "ui.updSearchAria": "Buscar una actualización",
+    "ui.updSearchTitle": "¿Buscar una actualización?",
+    "ui.updSearchBody": "Se hará una consulta anónima a la lista pública de versiones de dicta. No se envía ningún dato tuyo y no se instala nada hasta que lo confirmes.",
+    "ui.updSearchGo": "Buscar",
+    "ui.updSearching": "Buscando…",
+    "ui.updDownload": "Descargando",
+    "ui.installNow": "Instalar {v}",
+    "ui.updInstallAria": "Actualizar a {v}",
     "ui.updDialogTitle": "¿Actualizar Dicta?",
     "ui.updDialogBody": "Se descargará y aplicará la versión {v}. La descarga la hace tu propio equipo: no se envía nada a ningún sitio.",
     "ui.docTranscript": "Transcripción",
+    "ui.transcriptToggle": "Mostrar u ocultar la transcripción",
     "ui.docExists": "Ya existe un fichero con ese nombre.",
     "ui.docRenameFail": "No se pudo renombrar.",
     "ui.save": "Guardar",
@@ -176,7 +187,7 @@ const I18N = {
     "ui.testLow": "Nivel muy bajo · acércate al micrófono",
     "ui.testSilent": "No se captó audio · acércate al micrófono",
     /* micrófono: grupo único (dispositivo, umbral + prueba integrados) */
-    "ui.micGroupHint": "dispositivo, umbral y prueba de entrada",
+    "ui.micGroupHint": "Dispositivo, umbral y prueba de entrada",
     "ui.micDevice": "Dispositivo de entrada",
     "ui.testRowTitle": "Probar la entrada",
     "ui.testRowHint": "Habla con voz normal para comprobar la entrada.",
@@ -195,23 +206,32 @@ const I18N = {
     "ui.micMeterLoud": "Voz fuerte",
     "ui.micMeterThr": "Umbral",
     "ui.micMeterDb": "dB",
+    "ui.micMeterDrag": "Arrastra para fijar el umbral",
     /* control integrado de entrada: un medidor vertical con el umbral que se
        arrastra (ahí se funden la sensibilidad y el umbral) y el nivel de voz
        en horizontal a su lado */
     "ui.levelTitle": "Entrada y umbral",
-    "ui.levelHint": "Arrastra la marca para fijar el umbral: tu voz se oye cuando sube por encima.",
+    "ui.levelHint": "Arrastra la perilla para fijar el umbral.",
     "ui.liveVoice": "Nivel de voz",
     "ui.thrLabel": "Umbral",
     "ui.sensFactor": "sensibilidad",
     "ui.sensIncluded": "ya incluida en el umbral",
+    "ui.thrRange": "rango -80 a 0 dB",
+    /* opción discreta de la comprobación automática, dentro de los ajustes */
+    "ui.grpApp": "Aplicación",
+    "ui.updAutoTitle": "Comprobar actualizaciones",
+    "ui.updAutoHint": "Busca versiones nuevas al arrancar",
     /* espera antes de transcribir (silence_wait) */
     "ui.grpWait": "Espera antes de transcribir",
-    "ui.grpWaitHint": "el silencio que aguanta antes de cerrar la frase",
+    "ui.grpWaitHint": "El silencio que aguanta antes de cerrar la frase",
     "ui.waitTitle": "Espera antes de dar por terminado lo que dices",
-    "ui.waitHint": "el silencio que espera antes de cerrar la frase",
+    "ui.waitHint": "El silencio que espera antes de cerrar la frase",
+    "ui.waitAria": "Espera antes de transcribir, de 0,5 a 10 segundos, en pasos de 0,5",
+    "ui.waitDragHint": "Arrastra para ajustar la espera: de 0,5 a 10 s, en pasos de 0,5 s",
     "ui.waitPresets": "Rápido",
     "ui.waitCustom": "Otra cantidad",
     "ui.waitApply": "Aplicar",
+    "ui.waitPh": "otro… (s)",
     "ui.waitUnitS": "segundos",
     "ui.waitRange": "De 0,2 s a 600 s (10 minutos)",
     "ui.waitInvalid": "Escribe un valor entre 0,2 y 600 segundos.",
@@ -223,14 +243,23 @@ const I18N = {
     "ui.meetLiveTr": "Transcripción en vivo",
     "ui.srcLegendOn": "Sonando ahora",
     "ui.srcLegendOff": "En silencio",
-    "tag.tiny": "rápido", "tag.base": "ligero", "tag.small": "preciso",
-    "tag.medium": "muy preciso", "tag.turbo": "GPU",
+    "tag.tiny": "Rápido", "tag.base": "Ligero", "tag.small": "Preciso",
+    "tag.medium": "Muy preciso", "tag.turbo": "GPU",
     "eng.auto": "Automático", "eng.vulkan": "GPU Vulkan",
     "eng.cuda": "GPU CUDA (NVIDIA)", "eng.cpu": "CPU",
     "ui.engineHere": "En uso",
     "ui.engineDesc": "Motor para la transcripción",
-    "ui.engineOff": "no disponible en este equipo",
-    "ui.engineOffMany": "no disponibles",
+    "ui.engineOff": "No disponible en este equipo",
+    "ui.engineOffMany": "No disponibles",
+    /* Tarjeta gráfica: lista de dispositivos del motor en uso (Vulkan/CUDA). */
+    "ui.gpuTitle": "Tarjeta gráfica",
+    "ui.gpuHint": "Cuál usa el motor",
+    "ui.gpuAuto": "Automático",
+    "ui.gpuAutoHint": "Deja que el motor elija la mejor tarjeta",
+    "ui.gpuInUse": "En uso",
+    "ui.gpuApplying": "Aplicando… cargando motor",
+    "ui.gpuAria": "Tarjeta gráfica que usa el motor",
+    "ui.gpuIntegratedWarn": "Es la gráfica integrada: bastante más lenta. En audios largos puede perder precisión.",
     /* Motivo por motor NO compatible, en lenguaje de usuario y sin sonar a que se
        le niega algo: explica por qué esa opción no aplica en ESTE equipo. */
                     "ui.dictMultiHint": "Pega varias palabras separadas por coma o por salto de línea: se añaden todas de una vez.",
@@ -241,9 +270,9 @@ const I18N = {
     "ui.secDictation": "Dictado",
     "ui.secDictationHint": "Lo que se usa cuando pulsas el atajo",
     "ui.grpRecognition": "Reconocimiento",
-    "ui.grpRecognitionHint": "se aplica al siguiente dictado, sin reiniciar",
+    "ui.grpRecognitionHint": "Se aplica al siguiente dictado, sin reiniciar",
     "ui.micHint": "El que se usa al dictar",
-    "ui.sensHint": "ganancia aplicada antes de transcribir",
+    "ui.sensHint": "Ganancia aplicada antes de transcribir",
     "ui.sensPeak": "Umbral de voz",
     "ui.sensPeakHint": "Sube si se cuela ruido de fondo; baja si te come palabras",
     "ui.dictPaneHint": "Va como prompt en cada dictado: mejora nombres propios y jerga",
@@ -259,15 +288,15 @@ const I18N = {
     "ui.editorHint": "Se guarda solo en textos\\, nunca sale de tu equipo",
     "ui.shortcutsHint": "Se aplican en caliente, sin reiniciar",
     "ui.grpKeys": "Combinaciones",
-    "ui.grpKeysHint": "pulsa «Cambiar» y luego la combinación (1, 2 o 3 teclas)",
+    "ui.grpKeysHint": "Pulsa «Cambiar» y luego la combinación (1, 2 o 3 teclas)",
     "ui.appearance": "Apariencia",
     "ui.appearanceHint": "Se aplica a la vez al panel y a la isla",
     "ui.grpTheme": "Tema",
-    "ui.grpThemeHint": "el mismo interruptor está en la cabecera",
+    "ui.grpThemeHint": "El mismo interruptor está en la cabecera",
     "ui.themeMode": "Claro u oscuro",
     "ui.themeModeHint": "El panel cambia al instante; la isla toma el mismo tema",
     "ui.grpIsland": "La isla",
-    "ui.grpIslandHint": "única ventana flotante de dicta",
+    "ui.grpIslandHint": "Única ventana flotante de dicta",
     "ui.islandPos": "Posición",
     "ui.islandPosHint": "Arriba cuelga del borde; abajo es una pastilla flotante",
     "ui.islandPalette": "Paleta",
@@ -409,9 +438,20 @@ const I18N = {
     "ui.updDone": "Updated",
     "ui.updFailed": "Could not check",
     "ui.updateNow": "Update",
+    /* manual action: the link asks first, shows "Checking…" and then the real
+       result; with a new version, "Install". */
+    "ui.updSearchAria": "Check for an update",
+    "ui.updSearchTitle": "Check for an update?",
+    "ui.updSearchBody": "An anonymous query will be made to dicta's public list of versions. No data of yours is sent, and nothing is installed until you confirm.",
+    "ui.updSearchGo": "Check",
+    "ui.updSearching": "Checking…",
+    "ui.updDownload": "Downloading",
+    "ui.installNow": "Install {v}",
+    "ui.updInstallAria": "Update to {v}",
     "ui.updDialogTitle": "Update Dicta?",
     "ui.updDialogBody": "Version {v} will be downloaded and applied. The download happens on your own computer: nothing is sent anywhere.",
     "ui.docTranscript": "Transcript",
+    "ui.transcriptToggle": "Show or hide the transcript",
     "ui.docExists": "A file with that name already exists.",
     "ui.docRenameFail": "Could not rename.",
     "ui.save": "Save",
@@ -445,7 +485,7 @@ const I18N = {
     "ui.testLow": "Very low level · move closer to the mic",
     "ui.testSilent": "No audio captured · move closer to the mic",
     /* microphone: single group (device, threshold + input test) */
-    "ui.micGroupHint": "device, threshold and input test",
+    "ui.micGroupHint": "Device, threshold and input test",
     "ui.micDevice": "Input device",
     "ui.testRowTitle": "Test the input",
     "ui.testRowHint": "Speak normally to check the input.",
@@ -464,22 +504,31 @@ const I18N = {
     "ui.micMeterLoud": "Loud",
     "ui.micMeterThr": "Threshold",
     "ui.micMeterDb": "dB",
+    "ui.micMeterDrag": "Drag to set the threshold",
     /* integrated input control: vertical meter with the draggable threshold
        (sensitivity and threshold merged here) and the voice level beside it */
     "ui.levelTitle": "Input and threshold",
-    "ui.levelHint": "Drag the mark to set the threshold: your voice is heard once it rises above it.",
+    "ui.levelHint": "Drag the knob to set the threshold.",
     "ui.liveVoice": "Voice level",
     "ui.thrLabel": "Threshold",
     "ui.sensFactor": "sensitivity",
     "ui.sensIncluded": "already folded into the threshold",
+    "ui.thrRange": "range -80 to 0 dB",
+    /* discreet option for the automatic check, inside settings */
+    "ui.grpApp": "Application",
+    "ui.updAutoTitle": "Check for updates",
+    "ui.updAutoHint": "Looks for new versions at startup",
     /* wait before transcribing (silence_wait) */
     "ui.grpWait": "Wait before transcribing",
-    "ui.grpWaitHint": "the silence it holds before closing the sentence",
+    "ui.grpWaitHint": "The silence it holds before closing the sentence",
     "ui.waitTitle": "Wait before closing what you said",
-    "ui.waitHint": "the silence it waits before closing the sentence",
+    "ui.waitHint": "The silence it waits before closing the sentence",
+    "ui.waitAria": "Wait before transcribing, from 0.5 to 10 seconds, in 0.5 steps",
+    "ui.waitDragHint": "Drag to adjust the wait: from 0.5 to 10 s, in 0.5 s steps",
     "ui.waitPresets": "Quick",
     "ui.waitCustom": "Other amount",
     "ui.waitApply": "Apply",
+    "ui.waitPh": "other… (s)",
     "ui.waitUnitS": "seconds",
     "ui.waitRange": "From 0.2 s to 600 s (10 minutes)",
     "ui.waitInvalid": "Enter a value between 0.2 and 600 seconds.",
@@ -491,14 +540,23 @@ const I18N = {
     "ui.meetLiveTr": "Live transcript",
     "ui.srcLegendOn": "Playing now",
     "ui.srcLegendOff": "Silent",
-    "tag.tiny": "fast", "tag.base": "light", "tag.small": "accurate",
-    "tag.medium": "most accurate", "tag.turbo": "GPU",
+    "tag.tiny": "Fast", "tag.base": "Light", "tag.small": "Accurate",
+    "tag.medium": "Most accurate", "tag.turbo": "GPU",
     "eng.auto": "Automatic", "eng.vulkan": "GPU Vulkan",
     "eng.cuda": "GPU CUDA (NVIDIA)", "eng.cpu": "CPU",
     "ui.engineHere": "In use",
     "ui.engineDesc": "Engine for transcription",
-    "ui.engineOff": "not available on this computer",
-    "ui.engineOffMany": "not available on this computer",
+    "ui.engineOff": "Not available on this computer",
+    "ui.engineOffMany": "Not available on this computer",
+    /* Graphics card: device list of the engine in use (Vulkan/CUDA). */
+    "ui.gpuTitle": "Graphics card",
+    "ui.gpuHint": "Which one the engine uses",
+    "ui.gpuAuto": "Automatic",
+    "ui.gpuAutoHint": "Let the engine pick the best card",
+    "ui.gpuInUse": "In use",
+    "ui.gpuApplying": "Applying… loading engine",
+    "ui.gpuAria": "Graphics card the engine uses",
+    "ui.gpuIntegratedWarn": "This is the integrated GPU: much slower. On long audio it may lose accuracy.",
                     "ui.dictMultiHint": "Paste several words separated by commas or line breaks: they are all added at once.",
     "micDefault": "Default input",
 
@@ -507,9 +565,9 @@ const I18N = {
     "ui.secDictation": "Dictation",
     "ui.secDictationHint": "What runs when you press the shortcut",
     "ui.grpRecognition": "Recognition",
-    "ui.grpRecognitionHint": "applies to the next dictation, no restart",
+    "ui.grpRecognitionHint": "Applies to the next dictation, no restart",
     "ui.micHint": "The one used while dictating",
-    "ui.sensHint": "gain applied before transcribing",
+    "ui.sensHint": "Gain applied before transcribing",
     "ui.sensPeak": "Voice threshold",
     "ui.sensPeakHint": "Raise it if background noise leaks in; lower it if words get cut",
     "ui.dictPaneHint": "Sent as a prompt on every dictation: helps with names and jargon",
@@ -525,11 +583,11 @@ const I18N = {
     "ui.editorHint": "Saved only under textos\\, it never leaves your machine",
     "ui.shortcutsHint": "Applied live, no restart",
     "ui.grpKeys": "Combinations",
-    "ui.grpKeysHint": "press «Change» and then the combination (1, 2 or 3 keys)",
+    "ui.grpKeysHint": "Press «Change» and then the combination (1, 2 or 3 keys)",
     "ui.appearance": "Appearance",
     "ui.appearanceHint": "Applied to both the panel and the island",
     "ui.grpTheme": "Theme",
-    "ui.grpThemeHint": "the same switch is in the header",
+    "ui.grpThemeHint": "The same switch is in the header",
     "ui.themeMode": "Light or dark",
     "ui.themeModeHint": "The panel switches at once; the island takes the same theme",
     "ui.grpIsland": "The island",
@@ -661,6 +719,7 @@ const ICONS = {
   globe:'<circle cx="12" cy="12" r="9"/><path d="M3 12h18"/><path d="M12 3c2.6 2.5 3.9 5.5 3.9 9s-1.3 6.5-3.9 9c-2.6-2.5-3.9-5.5-3.9-9S9.4 5.5 12 3z"/>',
   chip:'<rect x="6.5" y="6.5" width="11" height="11" rx="2.5"/><path d="M10 10h4v4h-4z"/><path d="M10 2.5v4M14 2.5v4M10 17.5v4M14 17.5v4M2.5 10h4M2.5 14h4M17.5 10h4M17.5 14h4"/>',
   layers:'<path d="M12 2.8l8.4 4.3L12 11.4 3.6 7.1 12 2.8z"/><path d="M3.6 12.1L12 16.4l8.4-4.3"/><path d="M3.6 16.7L12 21l8.4-4.3"/>',
+  gpu:'<rect x="4" y="5.6" width="16" height="12.8" rx="2.6"/><circle cx="9.8" cy="12" r="2.5"/><path d="M14.6 10.2h3M14.6 13.8h3"/>',
   gauge:'<path d="M3.5 17.5a9 9 0 1 1 17 0"/><path d="M12 17.5l4.2-6.4"/><circle cx="12" cy="17.5" r="1.1"/>',
   timer:'<circle cx="12" cy="13.5" r="7.5"/><path d="M12 13.5l3.2-2.2"/><path d="M9 2.5h6"/><path d="M12 2.5V6"/>',
   speaker:'<path d="M11 4.6L6.6 8.5H3.2v7h3.4L11 19.4z"/><path d="M14.8 9.7a3.4 3.4 0 0 1 0 4.6"/><path d="M17.6 6.9a7.4 7.4 0 0 1 0 10.2"/>',
@@ -774,6 +833,8 @@ let state = {
   sources: [], meeting_source: "all", meeting_mic: true,
   queue: [], meeting: {}, docs: [], mic_test: {}, uploads: null,
   icon_version: "1", engine_options: [], engine_note: "",
+  /* tarjeta gráfica (dispositivos del motor): elección, resolución real y nota */
+  gpu_device: "auto", gpu_device_resolved: "", gpu_device_note: "",
   /* actualizaciones: ACTIVADAS por defecto —la franja enseña su estado normal
      sin que haya que encender nada—; el backend puede apagarlas y su `enabled`
      manda. `update` lo publica el backend; si aún no lo hace, `null` y la UI no
@@ -866,7 +927,8 @@ function hotkeyPretty(spec) {
 function fillSelect(sel, options, current) {
   const sig = options.map(o => o.value + "\u0001" + o.label + "\u0001" + (o.on == null ? "" : String(o.on))
                               + "\u0001" + (o.disabled ? "1" : "0") + "\u0001" + (o.note || "")
-                              + "\u0001" + (o.info || "")).join("|")
+                              + "\u0001" + (o.info || "") + "\u0001" + (o.title || "")
+                              + "\u0001" + (o.aria || "") + "\u0001" + (o.badge || "")).join("|")
               + "|" + String(current);
   if (sel.dataset.sig !== sig) {
     sel.dataset.sig = sig;
@@ -878,6 +940,14 @@ function fillSelect(sel, options, current) {
       /* Estado opcional por opción (fuentes de audio: ¿está sonando?): viaja en
          un data- atributo para que el desplegable propio pinte su punto. */
       if (o.on != null) opt.dataset.on = o.on ? "1" : "0";
+      /* Detalle por opción que NO cabe en la etiqueta visible (la tarjeta: su
+         nombre COMPLETO con el aviso de la integrada). Va al title —y, el nombre
+         completo, al aria— para que el desplegable propio lo conserve sin
+         recargar la fila. */
+      if (o.title) opt.title = o.title;
+      if (o.aria) opt.setAttribute("aria-label", o.aria);
+      /* Marca corta tras la etiqueta (p. ej. «En uso»): la pinta el desplegable. */
+      if (o.badge) opt.dataset.badge = o.badge;
       /* Una opción no compatible con el equipo se VE, pero no se puede elegir:
          `disabled` lo respeta también el <select> nativo (respaldo sin JS) y el
          motivo viaja en data-note para que el desplegable propio lo enseñe. */
@@ -915,6 +985,127 @@ function paintSelects() {
   }
   const rail = $("#engineState");
   if (rail) rail.textContent = resolved;
+}
+
+/* ---------------- tarjeta gráfica (dispositivos del motor) ----------------
+   El motor publica, en cada `engine_options`, una lista `devices` con
+   {index, name, desc} (VACÍA en Auto/CPU/CUDA/ROCm). Aquí se enseñan las
+   tarjetas del motor EN USO (`engine_resolved`, que es el que de verdad tira) con
+   su nombre TAL CUAL, MÁS «Automático» (value 'auto'). La elegida es
+   `gpu_device`; la que está en uso de verdad es `gpu_device_resolved`. Al elegir
+   se manda la acción `gpu_device` ({index:N} o 'auto'), que guarda y RELANZA el
+   motor (tarda unos segundos): mientras tanto se enseña «aplicando / cargando
+   motor» y las opciones quedan inertes, para que no parezca colgado. */
+let gpuBusy = false, gpuPicked = null, gpuAt = 0;
+
+function gpuEngineOpt() {
+  const opts = Array.isArray(state.engine_options) ? state.engine_options : [];
+  const key = state.engine_resolved || state.engine;
+  return opts.find(o => o.key === key) || opts.find(o => o.key === state.engine) || null;
+}
+const gpuDevices = () => { const o = gpuEngineOpt(); return (o && Array.isArray(o.devices)) ? o.devices : []; };
+/* La elección puede llegar como 'auto' o como {'index': N} (el backend guarda el
+   dict en el config), así que se normaliza a clave de texto ('auto' o el índice). */
+const gpuKey = g => (g && typeof g === "object")
+  ? String(g.index != null ? g.index : "auto")
+  : String(g == null || g === "" ? "auto" : g);
+const gpuSelKey = () => gpuKey(state.gpu_device);
+const gpuResKey = () => gpuKey(state.gpu_device_resolved);
+/* La integrada se reconoce por `uma: 1` (memoria unificada). El aviso de que va
+   más lenta va al title del dispositivo, en lenguaje claro. */
+const gpuIsIntegrated = d => /(^|[^0-9])uma:\s*1/.test(String(d && d.desc || ""));
+function gpuTip(d) {
+  const desc = String(d && d.desc || "");
+  return desc + (gpuIsIntegrated(d) ? "\n" + t("ui.gpuIntegratedWarn") : "");
+}
+/* El motor publica el nombre CON el controlador detrás, entre paréntesis
+   («AMD Radeon RX 9070 (AMD proprietary driver)»). En la LISTA se enseña SOLO el
+   nombre de la tarjeta: se corta el paréntesis FINAL del controlador, cualquier
+   variante que mencione «driver» («(NVIDIA proprietary driver)», «(AMD
+   proprietary driver)»…), sin tocar otros paréntesis del nombre (el «(TM)» de
+   «AMD Radeon(TM) Graphics» se queda). El nombre COMPLETO se conserva en el
+   title y en el aria de la fila, para no perder información. */
+function gpuShortName(name) {
+  const s = String(name == null ? "" : name).trim();
+  const cut = s.replace(/\s*\([^()]*\bdriver\b[^()]*\)\s*$/i, "").trim();
+  return cut || s;
+}
+/* Misma marca de «fila activa» que la lista del motor la pone el desplegable
+   propio (`data-active` en ddMark): la tarjeta se pinta con ESTE MISMO
+   componente, así que comparte realce, foco y teclado sin nada aparte. */
+
+function paintGpu() {
+  const row = $("#gpuRow"), sel = $("#selGpu");
+  if (!row || !sel) return;
+  const devs = gpuDevices();
+  /* Sin dispositivos (Auto, CPU…): no se pinta NADA, ni una lista vacía. */
+  if (!devs.length) {
+    row.hidden = true;
+    fillSelect(sel, [], "auto");            // deja el desplegable sin opciones
+    const b0 = $("#gpuBusy"); if (b0) b0.hidden = true;
+    const n0 = $("#gpuNote"); if (n0) n0.hidden = true;
+    return;
+  }
+  row.hidden = false;
+
+  const selKey = gpuSelKey(), resKey = gpuResKey();
+  /* «Automático» PRIMERO (value 'auto'); después cada tarjeta del motor con su
+     nombre YA LIMPIO. El nombre COMPLETO y el aviso de la integrada viajan en el
+     title (y el completo, además, en el aria) para no perder información. */
+  const items = [{ value: "auto", label: t("ui.gpuAuto"), title: t("ui.gpuAutoHint") }]
+    .concat(devs.map(d => {
+      const full = String(d.name || "");
+      /* «en uso»: la tarjeta que el motor usa de verdad (gpu_device_resolved) y
+         que no es la elegida; si coincide, el propio check ya lo dice. */
+      const inuse = resKey && resKey !== "auto" && String(d.index) === resKey
+                    && String(d.index) !== selKey;
+      return {
+        value: String(d.index),
+        label: gpuShortName(d.name),                    // solo el nombre de la tarjeta
+        title: (full ? full + "\n" : "") + gpuTip(d),   // nombre COMPLETO + aviso integrada
+        aria: full || undefined,                        // el nombre COMPLETO sigue accesible
+        badge: inuse ? t("ui.gpuInUse") : "",
+        disabled: gpuBusy                               // mientras aplica: no elegible
+      };
+    }));
+  fillSelect(sel, items, selKey);
+
+  /* El estado «aplicando» se anuncia en el propio control (aria-busy) y se ve
+     como aviso en la columna de texto; las opciones quedan inertes mientras. */
+  const wrap = $("#gpuWrap");
+  if (wrap) wrap.setAttribute("aria-busy", String(gpuBusy));
+  const busy = $("#gpuBusy");
+  if (busy) busy.hidden = !gpuBusy;
+  const note = $("#gpuNote");
+  if (note) {
+    const n = String(state.gpu_device_note || "").trim();
+    note.hidden = !n;
+    note.textContent = n;
+  }
+}
+
+/* Elige tarjeta: refleja la elección al instante, manda la acción y deja el
+   estado «aplicando» mientras el motor recarga. */
+async function gpuApply(value) {
+  if (gpuBusy) return;
+  gpuBusy = true; gpuPicked = value; gpuAt = Date.now();
+  state.gpu_device = value;                            // optimista: se ve ya
+  paintGpu();
+  const res = await send("gpu_device", value === "auto" ? "auto" : { index: Number(value) });
+  const s = await getState();
+  if (s) merge(s);
+  paintGpu();
+  if (!res || res.ok === false) { gpuBusy = false; paintGpu(); }
+}
+
+/* Lo llama el sondeo: quita el «aplicando» cuando el config ya refleja la
+   elección (con un mínimo para que se lea) o al cabo de un tope, para no parecer
+   colgado si el motor tarda. */
+function gpuTick() {
+  if (!gpuBusy) return;
+  const ok = gpuSelKey() === String(gpuPicked);
+  const dt = Date.now() - gpuAt;
+  if ((ok && dt > 2200) || dt > 15000) { gpuBusy = false; gpuPicked = null; paintGpu(); }
 }
 
 /* ---------------- isla: posición y paleta (sección Apariencia) ----------------
@@ -982,8 +1173,7 @@ let micEls = null;
 function micRefs() {
   if (!micEls) {
     micEls = { box: $("#micMeter"), bars: $("#micMeterBars"), mark: $("#micMeterThr"),
-               fill: $("#liveMeterFill"), hm: $("#liveMeter"), hthr: $("#liveMeterThr"),
-               st: $("#micMeterState"), val: $("#micMeterVal"), note: $("#micThrNote") };
+               note: $("#micThrNote") };
   }
   return micEls;
 }
@@ -1010,15 +1200,25 @@ function micStepDb() {
   return micShownDb;
 }
 
-/* Barras del medidor vertical y marcas de la escala: se construyen UNA vez. */
-const V_BARS = 16;
+/* Recuadros del medidor HORIZONTAL y marcas de la escala: se construyen UNA vez. */
+const H_SEG = 40;
+/* Zona de color de cada recuadro según su dB (semáforo por nivel): verde hasta
+   -20 dB, ámbar hasta -6 dB y rojo por encima (saturación). Se fija al construir
+   para no tocarla cada fotograma. */
+function segZone(pctOfSeg) {
+  const db = METER_DB_FLOOR + (pctOfSeg / 100) * (METER_DB_CEIL - METER_DB_FLOOR);
+  if (db <= -20) return "ok";
+  if (db <= -6) return "warn";
+  return "err";
+}
 function buildMeterBars() {
   const box = micRefs().bars;
   if (!box || box.dataset.built) return;
   box.dataset.built = "1";
-  for (let i = 0; i < V_BARS; i++) {
+  for (let i = 0; i < H_SEG; i++) {
     const b = document.createElement("i");
     b.dataset.on = "0";
+    b.dataset.zone = segZone(((i + 0.5) / H_SEG) * 100);
     box.appendChild(b);
   }
 }
@@ -1029,28 +1229,17 @@ function buildMeterScale() {
     box.dataset.built = "1";
     V_TICKS.forEach(v => {
       const tick = document.createElement("span");
-      tick.className = "vscale-tick";
-      tick.style.bottom = meterPct(v) + "%";
+      tick.className = "imtr-tick";
+      tick.style.left = meterPct(v) + "%";
+      tick.dataset.edge = v === 0 ? "end" : (v === METER_DB_FLOOR ? "start" : "");
       tick.textContent = v + " " + t("ui.micMeterDb");
       box.appendChild(tick);
     });
   }
-  /* la MISMA escala, en horizontal, debajo del nivel de voz: así el relleno y su
-     marca se leen sin adivinar */
-  const hs = $("#liveScale");
-  if (hs && !hs.dataset.built) {
-    hs.dataset.built = "1";
-    V_TICKS.slice().reverse().forEach(v => {
-      const tick = document.createElement("span");
-      tick.className = "hscale-tick";
-      tick.textContent = v + " " + t("ui.micMeterDb");
-      hs.appendChild(tick);
-    });
-  }
 }
 
-/* Pinta el control entero: medidor vertical (barras + marca), nivel de voz en
-   horizontal, la tapiña de estado, el valor y la nota del umbral. */
+/* Pinta el control: medidor HORIZONTAL (recuadros + perilla del umbral), la
+   píldora de estado de voz y la nota con el valor real del umbral. */
 function paintMicMeter() {
   const E = micRefs();
   if (!E.box || !E.bars || !E.mark) return;
@@ -1068,7 +1257,7 @@ function paintMicMeter() {
   if (key === micPaintKey) return;
   micPaintKey = key;
 
-  const lit = Math.round((pct / 100) * V_BARS);       // se llena de abajo arriba
+  const lit = Math.round((pct / 100) * H_SEG);        // se llena de izquierda a derecha
   const kids = E.bars.children;
   for (let i = 0; i < kids.length; i++) {
     const on = i < lit ? "1" : "0";
@@ -1076,32 +1265,28 @@ function paintMicMeter() {
   }
   E.bars.dataset.lit = String(lit);
 
-  E.mark.style.bottom = thrPct + "%";
+  E.mark.style.left = thrPct + "%";
   E.mark.title = t("ui.micMeterThr") + " \u00B7 " +
     (isFinite(micMarkDb()) ? Math.round(micMarkDb()) + " " + t("ui.micMeterDb") : "\u2014");
   E.box.setAttribute("aria-valuenow", String(Math.round(thrPct)));
   E.box.setAttribute("aria-valuetext", t("ui.micMeterThr") + " " +
     (isFinite(micMarkDb()) ? Math.round(micMarkDb()) + " " + t("ui.micMeterDb") : "\u2014"));
 
-  /* el nivel de voz, EN HORIZONTAL, con la misma marca de umbral */
-  if (E.fill) E.fill.style.width = pct + "%";
-  if (E.hthr) E.hthr.style.left = thrPct + "%";
+  /* la píldora «Con voz / Sin voz» se RETIRÓ (el medidor y su perilla ya dan
+     ese feedback); queda solo el estado del medidor, sin texto a la vista */
   E.box.dataset.state = voice ? "voice" : "quiet";
-  if (E.hm) E.hm.dataset.state = voice ? "voice" : "quiet";
-  if (E.st) {
-    E.st.dataset.state = voice ? "voice" : "quiet";
-    E.st.textContent = t(voice ? "ui.micVoice" : "ui.micNoVoice");
-  }
-  if (E.val) E.val.textContent = isFinite(db)
-    ? Math.round(db) + " " + t("ui.micMeterDb") : "\u2014";
 
-  /* el valor del umbral, con el mismo lenguaje visual que el resto del panel */
+  /* el valor del umbral, COMPACTO junto al medidor («-59 dB»); el detalle
+     largo (sensibilidad ×N, rango) va al title/aria, no a la vista */
   if (E.note) {
     const th = micMarkDb();
-    E.note.textContent = t("ui.thrLabel") + ": " +
-      (isFinite(th) ? Math.round(th) + " " + t("ui.micMeterDb") : "\u2014") +
-      " \u00B7 " + t("ui.sensFactor") + " \u00D7" + sensOf().toFixed(1).replace(".", ",") +
-      " " + t("ui.sensIncluded");
+    const val = isFinite(th) ? Math.round(th) + " " + t("ui.micMeterDb") : "\u2014";
+    if (E.note.textContent !== val) E.note.textContent = val;
+    const detail = t("ui.thrLabel") + ": " + val + " \u00B7 " +
+      t("ui.sensFactor") + " \u00D7" + sensOf().toFixed(1).replace(".", ",") +
+      " " + t("ui.sensIncluded") + " \u00B7 " + t("ui.thrRange");
+    if (E.note.title !== detail) E.note.title = detail;
+    E.note.setAttribute("aria-label", detail);
   }
 }
 
@@ -1118,20 +1303,20 @@ function setThresholdDb(db) {
 function commitThreshold() {
   send("voice_threshold", state.voice_threshold);
 }
-function meterDragFrom(clientY) {
+function meterDragFrom(clientX) {
   const box = micRefs().box;
   if (!box) return;
   const r = box.getBoundingClientRect();
-  const pct = Math.min(1, Math.max(0, (r.bottom - clientY) / r.height));
+  const pct = Math.min(1, Math.max(0, (clientX - r.left) / r.width));
   setThresholdDb(METER_DB_FLOOR + pct * (METER_DB_CEIL - METER_DB_FLOOR));
 }
 function wireMicMeter() {
   const box = micRefs().box;
   if (!box) return;
   box.addEventListener("mousedown", e => {
-    micDragging = true; meterDragFrom(e.clientY); e.preventDefault();
+    micDragging = true; meterDragFrom(e.clientX); e.preventDefault();
   });
-  window.addEventListener("mousemove", e => { if (micDragging) meterDragFrom(e.clientY); });
+  window.addEventListener("mousemove", e => { if (micDragging) meterDragFrom(e.clientX); });
   window.addEventListener("mouseup", () => {
     if (micDragging) { micDragging = false; commitThreshold(); }
   });
@@ -1177,69 +1362,103 @@ function micFrame(ts) {
 }
 
 /* ---------------- espera antes de transcribir (silence_wait) ----------------
-   Segundos de silencio que aguanta dicta antes de dar por terminado lo que
-   dices: de fracciones de segundo a minutos. Presets rápidos + cantidad libre
-   (0,2 s a 600 s). El backend admite ese rango y también minutos. */
-const WAIT_MIN = 0.2, WAIT_MAX = 600;
-/* Presets: de 1 s a 3 min, que es el rango que usa el autor (pausas para pensar).
-   Menos botones y más claros que la fila anterior de nueve. */
-const WAIT_PRESETS = [1, 2, 5, 10, 30, 60, 180];
-const waitOf = () => Math.min(WAIT_MAX, Math.max(WAIT_MIN,
-  Number(state.silence_wait) || 1.05));
+   BARRA limpia (SIN marcas): un carril suave con el tramo recorrido encendido en
+   acento y el tirador de la MISMA familia que la perilla del umbral (reutiliza
+   `.imtr-thr i`: línea + agarre 8x20 con muescas, acento al pasar), centrado
+   verticalmente en el carril. SIN NINGUN TEXTO: el valor vive SOLO en la píldora
+   y el rango/paso en el title+aria. Va COMPACTA en el raíl de SU MISMA fila,
+   junto al título y a la píldora. Se ajusta a ESCALONES de 0,5 s al arrastrar y
+   con el teclado, y se guarda al SOLTAR (acción silence_wait; el backend admite
+   0,2-600 s, así que 0,5-10 s entra de sobra). */
+const WAIT_UI_MIN = 0.5, WAIT_UI_MAX = 10, WAIT_UI_STEP = 0.5, WAIT_PAD = 12;
+const waitOf = () => Math.min(WAIT_UI_MAX, Math.max(WAIT_UI_MIN,
+  Number(state.silence_wait) || 1.5));
+/* ajuste a ESCALONES de 0,5 s: es como lo pide el autor (potenciómetro) */
+const waitSnap = s => Math.round(Math.min(WAIT_UI_MAX,
+  Math.max(WAIT_UI_MIN, Number(s) || WAIT_UI_MIN)) * 2) / 2;
+/* SIEMPRE un decimal con coma («2,0 s»), que es como lo lee el autor. */
+const waitPretty = s => (Math.round(Math.min(WAIT_UI_MAX,
+  Math.max(WAIT_UI_MIN, Number(s) || 0)) * 10) / 10).toFixed(1).replace(".", ",") + " s";
 
-function waitPretty(s) {
-  s = Math.max(0, Number(s) || 0);
-  if (s < 60) return (s % 1 ? (Math.round(s * 10) / 10).toFixed(1) : String(Math.round(s))) + " s";
-  const m = Math.floor(s / 60), sec = Math.round(s % 60);
-  return sec ? `${m} min ${sec} s` : `${m} min`;
+let waitDragging = false, waitEls = null;
+function waitRefs() {
+  if (!waitEls) waitEls = { box: $("#waitSlider"), knob: $("#waitKnob"), fill: $("#waitFill") };
+  return waitEls;
+}
+/* Posición de un valor sobre el eje (0..1), con la misma regla que el tirador. */
+const waitPct = v => (Math.min(WAIT_UI_MAX, Math.max(WAIT_UI_MIN, v)) - WAIT_UI_MIN) /
+  (WAIT_UI_MAX - WAIT_UI_MIN);
+
+/* Tirador y TRAMO encendido sobre el MISMO eje (medio agarre a cada lado:
+   WAIT_PAD). El ancho del tramo encendido SIGUE al tirador. SIN marcas. */
+function paintWaitScale() {
+  const E = waitRefs();
+  if (!E.box) return;
+  const r = E.box.getBoundingClientRect();
+  const inner = Math.max(0, r.width - WAIT_PAD * 2);
+  const x = WAIT_PAD + waitPct(waitOf()) * inner;
+  if (E.knob) E.knob.style.left = x + "px";
+  if (E.fill) E.fill.style.width = x + "px";
 }
 
 function paintWait() {
   const v = waitOf();
   const val = $("#waitValue");
   if (val) val.textContent = waitPretty(v);
-  const inp = $("#waitInput");
-  if (inp && document.activeElement !== inp) inp.value = String(Math.round(v * 100) / 100);
-  $$("#waitPresets [data-wait]").forEach(b => {
-    b.setAttribute("aria-pressed", String(Number(b.dataset.wait) === v));
-  });
+  const E = waitRefs();
+  if (E.box) {
+    E.box.setAttribute("aria-valuenow", String(v));
+    E.box.setAttribute("aria-valuetext", waitPretty(v));
+  }
+  paintWaitScale();
 }
 
-function buildWaitPresets() {
-  const box = $("#waitPresets");
-  if (!box || box.dataset.built) return;
-  box.dataset.built = "1";
-  WAIT_PRESETS.forEach(s => {
-    const b = document.createElement("button");
-    b.type = "button";
-    b.className = "btn btn-soft btn-sm preset";
-    b.dataset.wait = String(s);
-    b.textContent = waitPretty(s);
-    b.addEventListener("click", () => setWait(s));
-    box.appendChild(b);
-  });
-}
-
-function setWait(seconds) {
-  const v = Math.min(WAIT_MAX, Math.max(WAIT_MIN, Number(seconds)));
+/* setWait: fija el valor (sin enviar) ajustado a escalones de 0,5 s. `commit`
+   manda la acción al backend. */
+function setWait(seconds, commit) {
+  const v = waitSnap(seconds);
   if (!isFinite(v)) return;
   state.silence_wait = v;
-  const err = $("#waitError");
-  if (err) err.hidden = true;
   paintWait();
-  send("silence_wait", v);
+  if (commit) send("silence_wait", v);
 }
 
-function applyWaitInput() {
-  const inp = $("#waitInput"), err = $("#waitError");
-  if (!inp) return;
-  const v = Number(String(inp.value).trim().replace(",", "."));
-  if (!isFinite(v) || v < WAIT_MIN || v > WAIT_MAX) {
-    if (err) { err.textContent = t("ui.waitInvalid"); err.hidden = false; }
-    paintWait();
-    return;
-  }
-  setWait(v);
+function waitFromX(clientX) {
+  const E = waitRefs();
+  if (!E.box) return;
+  const r = E.box.getBoundingClientRect();
+  const inner = Math.max(1, r.width - WAIT_PAD * 2);
+  const pct = Math.min(1, Math.max(0, (clientX - r.left - WAIT_PAD) / inner));
+  setWait(WAIT_UI_MIN + pct * (WAIT_UI_MAX - WAIT_UI_MIN));
+}
+
+/* Arrastre (ratón) + teclado (flechas ±0,5 s; Mayús ±1 s; Inicio/Fin). */
+function wireWaitSlider() {
+  const E = waitRefs();
+  if (!E.box) return;
+  E.box.addEventListener("mousedown", e => {
+    waitDragging = true; E.box.dataset.drag = "1";
+    waitFromX(e.clientX); e.preventDefault();
+  });
+  window.addEventListener("mousemove", e => { if (waitDragging) waitFromX(e.clientX); });
+  window.addEventListener("mouseup", () => {
+    if (waitDragging) {
+      waitDragging = false; delete E.box.dataset.drag;
+      send("silence_wait", state.silence_wait);
+    }
+  });
+  E.box.addEventListener("keydown", e => {
+    let v = waitOf();
+    const step = e.shiftKey ? 1 : WAIT_UI_STEP;
+    if (e.key === "ArrowRight" || e.key === "ArrowUp") v += step;
+    else if (e.key === "ArrowLeft" || e.key === "ArrowDown") v -= step;
+    else if (e.key === "Home") v = WAIT_UI_MIN;
+    else if (e.key === "End") v = WAIT_UI_MAX;
+    else return;
+    e.preventDefault();
+    setWait(v, true);
+  });
+  window.addEventListener("resize", paintWaitScale);
 }
 
 /* ---------------- diccionario ---------------- */
@@ -2160,6 +2379,7 @@ function mediaItems() {
   const qa = queueAudioMap();
   const docs = (state.docs || []).slice()
     .sort((a, b) => (Number(b.mtime) || 0) - (Number(a.mtime) || 0));
+  const ups = uploadItems();
   const have = new Set();
   const items = [];
 
@@ -2169,34 +2389,64 @@ function mediaItems() {
     return /\.[^.]+$/.test(s) ? s : s + ".md";
   };
 
+  /* Índice por RAÍZ: enlaza una subida con su documento ya transcrito, para que
+     la tarjeta del documento sepa que TAMBIÉN hay una ficha de subida que
+     borrar. Sin esto, eliminar un documento ya transcrito dejaba su subida
+     huérfana en uploads.json y la tarjeta volvía a aparecer (fantasma). */
+  const upByStem = new Map();
+  ups.forEach(u => {
+    const k = docStem(u.doc || u.name);
+    if (k && !upByStem.has(k)) upByStem.set(k, u);
+  });
+  /* Estado real de la cola por RAÍZ: da el PROGRESO (que la ficha de /state no
+     publica) y respalda el estado de la subida. */
+  const qStem = new Map();
+  (state.queue || []).forEach(q => {
+    const k = docStem(baseName(q.doc || q.label || q.src));
+    if (k && !qStem.has(k)) qStem.set(k, { status: String(q.status || ""), progress: Number(q.progress) || 0 });
+  });
+  const finished = st => st === "listo" || st === "error";
+
   docs.forEach(d => {
     const stem = docStem(d.name);
     if (stem) have.add(stem);
+    const u = upByStem.get(stem);
+    /* Si su subida AÚN está en curso (pendiente/transcribiendo), NO es una
+       transcripción terminada: la representa la tarjeta de la subida con su
+       «Transcribiendo…». El .md YA existe desde el primer instante (el backend
+       lo escribe MIENTRAS transcribe) y su estado todavía no es «listo»: por eso
+       no basta con que el fichero esté, hay que mirar el ESTADO de la subida. */
+    if (u && !finished(u.state)) return;
     const own = baseName(d.audio);                 // .wav de la reunión, si lo hay
     items.push({
       kind: "doc", key: "doc:" + d.name, stem,
       name: d.name, size: Number(d.size) || 0,
       duration: Number(d.duration) || 0,
       play: own || qa.get(stem) || "",
-      hasWav: !!own, doc: withExt(d.name), transcribe: true
+      hasWav: !!own, doc: withExt(d.name), docName: withExt(d.name),
+      upName: u ? u.name : "",
+      transcribe: true
     });
   });
 
-  /* Subidas en curso (todavía sin documento) van ARRIBA. */
+  /* Subidas SIN documento terminado: van ARRIBA, con su estado y su barra. Una
+     subida NUNCA es «transcripción» hasta que su estado es final (listo/error)
+     Y su documento existe —cuando lo es, la representa la tarjeta del doc—. */
   const pend = [];
-  uploadItems().forEach(u => {
+  ups.forEach(u => {
     const stem = docStem(u.doc || u.name);
-    if (stem && have.has(stem)) return;            // ya la representa su tarjeta
+    if (stem && have.has(stem) && finished(u.state)) return;   // ya la representa su doc
+    const q = qStem.get(stem) || {};
     pend.push({
       kind: "upload", key: "up:" + u.name, stem,
       name: u.name, size: Number(u.size) || 0,
       duration: Number(u.duration) || 0,
       play: u.play || qa.get(docStem(u.name)) || "",
       hasWav: false,
-      doc: u.doc ? withExt(u.doc) : "",            // documento cuando exista
-      transcribe: !!u.doc,
+      upName: u.name, docName: "",
+      doc: "", transcribe: false,
       state: String(u.state || "pendiente"),
-      progress: Number(u.progress) || 0
+      progress: Number(u.progress) || Number(q.progress) || 0
     });
   });
   return pend.concat(items);
@@ -2230,7 +2480,14 @@ function makeMediaCard() {
   const del = document.createElement("button");
   del.type = "button"; del.className = "btn btn-danger btn-icon btn-sm";
   del.dataset.icon = "trash"; del.dataset.size = "13";
-  acts.append(ren, del);
+  /* Flecha de la transcripción: MISMO botón de icono que el lápiz y la basura
+     (btn btn-soft btn-icon btn-sm), integrado en la cabecera de la carta. Al
+     abrir, el chevron gira para apuntar hacia abajo. */
+  const acc = document.createElement("button");
+  acc.type = "button"; acc.className = "btn btn-soft btn-icon btn-sm m-acc";
+  acc.dataset.icon = "chevron-right"; acc.dataset.size = "14"; acc.dataset.sw = "2.2";
+  acc.setAttribute("aria-expanded", "false");
+  acts.append(acc, ren, del);
   head.append(tile, txt, acts);
 
   /* (2) reproductor: onda real (/peaks) + su duración */
@@ -2255,6 +2512,7 @@ function makeMediaCard() {
   transcript.className = "m-transcript";
   transcript.setAttribute("role", "region");
   transcript.tabIndex = 0;
+  transcript.hidden = true;
 
   /* (4) descargas: solo cuando existen (iconos distintos) */
   const tools = document.createElement("div");
@@ -2277,12 +2535,21 @@ function makeMediaCard() {
 
   el.append(head, pvSlot, stateRow, transcript, tools);
 
-  const r = { el, tile, name, meta, ren, del, pvSlot, pv: null,
-              stateRow, tag, progWrap, fill, transcript, tools, dlMd, dlTxt, dlWav,
+  const r = { el, tile, name, meta, ren, del, acc, pvSlot, pv: null,
+              stateRow, tag, progWrap, fill, open: false,
+              transcript, tools, dlMd, dlTxt, dlWav,
               doc: "", base: "", transcribe: false, loaded: false,
               remove: null, delIdle: "ui.remove", delOn: "ui.confirmRemove",
               prev: {},
               dispose() { if (r.pv) { disposePreview(r.pv); r.pv = null; } } };
+
+  /* desplegar/plegar la transcripción (sin repintar: solo su visibilidad) */
+  acc.addEventListener("click", () => {
+    r.open = !r.open;
+    acc.setAttribute("aria-expanded", String(r.open));
+    acc.dataset.open = r.open ? "1" : "0";
+    transcript.hidden = !r.open;
+  });
 
   /* renombrar (lápiz): solo cuando hay documento/transcripción */
   ren.addEventListener("click", () => { if (r.doc) beginRename(r, r.doc); });
@@ -2290,15 +2557,11 @@ function makeMediaCard() {
   /* quitar (subida en curso) / eliminar (documento): DOS PASOS, el mismo botón
      pasa a la pregunta en rojo y solo el segundo clic llama al backend. */
   del.addEventListener("click", async () => {
-    if (!r.remove) return;
+    if (!r.remove || (!r.remove.doc && !r.remove.up)) return;
     if (del.dataset.confirm) {
       delete del.dataset.confirm;
       confirmState(del, false, r.delIdle, r.delOn);
-      const rm = r.remove;
-      if (rm.action === "doc.delete") { deleteDoc(rm.value); return; }
-      await send(rm.action, rm.value);
-      merge(await getState());
-      paint();
+      await runMediaDelete(r.remove);
       return;
     }
     del.dataset.confirm = "1";
@@ -2337,16 +2600,14 @@ async function loadTranscript(r, doc) {
 
 function paintMediaCard(r, it) {
   /* --- cabecera: icono, nombre real y peso · duración --- */
-  const key = it.key + "|" + (it.doc || "");
+  const key = it.key + "|" + (it.doc || "") + "|" + (it.upName || "");
   if (r.prev.key !== key) {
     r.prev.key = key;
     r.doc = it.doc || "";
     r.base = it.doc ? docStem(it.doc) : "";
     r.transcribe = !!it.transcribe;
     r.loaded = false; r.transcript.textContent = "";
-    r.remove = it.transcribe
-      ? { action: "doc.delete", value: it.doc }
-      : { action: "upload.remove", value: it.name };
+    r.remove = { doc: it.docName || "", up: it.upName || "" };
     r.delIdle = it.transcribe ? "ui.docDelete" : "ui.remove";
     r.delOn = it.transcribe ? "ui.confirmDelete" : "ui.confirmRemove";
   }
@@ -2375,12 +2636,14 @@ function paintMediaCard(r, it) {
   }
   if (r.pv) labelPreview(r.pv);                 // el idioma puede haber cambiado
 
-  /* --- (3) transcripción completa DEBAJO, o el estado con su barra --- */
+  /* --- (3) transcripción (acordeón plegable) o el estado con su barra --- */
   if (r.transcribe) {
     r.stateRow.hidden = true;
-    r.transcript.hidden = false;
+    r.acc.hidden = false;
+    r.transcript.hidden = !r.open;
     if (!r.loaded && r.doc) { r.loaded = true; loadTranscript(r, r.doc); }
   } else {
+    r.acc.hidden = true;
     r.transcript.hidden = true;
     r.stateRow.hidden = false;
     const st = UPLOAD_STATE[it.state] || UPLOAD_STATE.pendiente;
@@ -2420,6 +2683,8 @@ function paintMediaCard(r, it) {
     r.dlWav.setAttribute("aria-label", t("ui.dlAudio")); r.dlWav.title = t("ui.dlAudio");
     r.ren.setAttribute("aria-label", t("ui.docRename")); r.ren.title = t("ui.docRename");
     r.transcript.setAttribute("aria-label", t("ui.docTranscript"));
+    r.acc.title = t("ui.transcriptToggle");
+    r.acc.setAttribute("aria-label", t("ui.transcriptToggle"));
     r.prev.lab = uiLocale();
   }
   confirmState(r.del, !!r.del.dataset.confirm, r.delIdle, r.delOn);
@@ -2557,14 +2822,23 @@ async function renameDoc(oldName, newBase, r) {
    que es lo que enlaza una subida con su documento ya transcrito. */
 function docStem(n) { return baseName(n).replace(/\.[^.]+$/, ""); }
 
-async function deleteDoc(name) {
-  try {
-    await fetch("/rpc", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "doc.delete", doc: name })
-    });
-  } catch (_) {}
+/* Borra lo que le toca a UNA tarjeta, todo de una vez y en orden:
+     · doc -> POST {action:"doc.delete", doc:"NOMBRE.md"}   (textos/NOMBRE.md)
+     · up  -> POST {action:"upload.remove", value:"NOMBRE"} (uploads/<...> y su ficha)
+   Una reunión grabada se borra solo con doc; una subida sin transcribir, solo
+   con up; una subida YA transcrita lleva los DOS (doc + up) —eso es lo que
+   evita que su ficha de subida quede huérfana y la tarjeta reaparezca—. */
+async function runMediaDelete(remove) {
+  if (remove.doc) {
+    try {
+      await fetch("/rpc", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "doc.delete", doc: remove.doc })
+      });
+    } catch (_) {}
+  }
+  if (remove.up) await send("upload.remove", remove.up);
   merge(await getState());
   paint();
 }
@@ -2593,80 +2867,127 @@ async function focusDocCard(name) {
 /* ---- actualizaciones: la franja del PIE, junto a la versión ---- */
 /* Por privacidad la comprobación va APAGADA por defecto: el interruptor de la
    franja solo la enciende si el autor quiere, y es el único momento en que
-   dicta pregunta por una versión nueva. El backend publica /state.version y
+   dicta pregunta por una versión nueva. El backend publica /state.version,
    /state.update = {available, latest, url, notes, checked_at, progress,
-   enabled, error, applied}; las acciones son POST {action:"check_updates"} (el
-   ajuste), {action:"check_update"} (comprobar ahora) y {action:"update"}
-   (descargar y aplicar). La franja enseña SIEMPRE el estado real y, al pulsar
-   «Actualizar», pregunta ANTES con el diálogo propio del panel: si el autor
-   cancela no se envía nada y la descarga no llega a lanzarse. Si el backend no
-   publicara `update`, updInfo() devuelve null y la franja queda apagada. */
+   enabled, error, applied} y el ajuste REAL en /state.check_updates; las
+   acciones son POST {action:"check_updates"} (el ajuste), {action:"check_update",
+   value:{force:true}} (buscar AHORA, aunque el ajuste esté apagado — es una
+   acción explícita del autor, no una comprobación de fondo) y {action:"update"}
+   (descargar y aplicar, que el ajuste tampoco bloquea). La franja enseña
+   SIEMPRE el estado real y, al pulsar «Actualizar», pregunta ANTES con el
+   diálogo propio del panel: si el autor cancela no se envía nada y la descarga
+   no llega a lanzarse. Si el backend no publicara `update`, updInfo() devuelve
+   null y la franja queda apagada. */
 let updBusy = false;      // entre pulsar «Actualizar» y que el backend termine
+let updSearching = false; // entre confirmar la búsqueda y que responda
 let updTimer = null;      // sondeo breve mientras descarga
+let updAutoChecked = false; // el auto-chequeo de arranque ya se lanzó (una vez)
 
 function updInfo() {
   const u = state.update;
   return (u && typeof u === "object") ? u : null;
 }
 
-/* El ajuste vive en /state.update.enabled (backend) y está ACTIVADO por
-   defecto: la franja enseña su estado normal sin que el autor encienda nada.
-   El respaldo local (state.check_updates) solo cubre el instante previo al
-   primer /state, así que su defecto también es encendido. */
+/* El ajuste REAL vive en /state.check_updates (lo publica el backend tal cual
+   está en dicta_config.json) y está ACTIVADO por defecto. Antes se espejaba
+   /state.update.enabled, que sale «off» (enabled=false) hasta la PRIMERA
+   comprobación aunque el ajuste esté encendido: el interruptor mentía al
+   arrancar. El respaldo local (state.check_updates, defecto true) cubre el
+   instante previo al primer /state. */
 function updEnabled() {
+  if (typeof state.check_updates === "boolean") return state.check_updates;
   const u = updInfo();
-  return u ? (u.enabled !== false) : (state.check_updates !== false);
+  return u ? (u.enabled !== false) : true;
 }
 
 /* Estado REAL de la franja, resuelto por prioridad: lo que está pasando ahora
-   manda. Devuelve la clave de texto y un `state` para dar color con CSS. */
+   manda. Devuelve la clave de la NOTA breve (o null, sin nota) y un `state`
+   para dar color con CSS. La ACCIÓN (el enlace) se decide aparte, en
+   paintUpdate(), porque su etiqueta depende de si hay algo que instalar. */
 function updStatus(u) {
-  if (!updEnabled()) return { key: "ui.updOff", cls: "off" };
+  /* Búsqueda manual en curso: la franja lo dice («Buscando…») aunque el
+     backend aún no haya publicado nada nuevo. */
+  if (updSearching) return { key: "ui.updSearching", cls: "run" };
   const prog = u ? Number(u.progress) || 0 : 0;
+  if (updBusy || (prog > 0 && prog < 100 && u && u.available === true))
+    return { key: "ui.updDownload", cls: "run", pct: prog };
   if (u && u.error) return { key: "ui.updFailed", cls: "err" };
-  if (updBusy || (prog > 0 && prog < 100 && u && u.available))
-    return { key: "ui.updating", cls: "run" };
   if (u && u.applied) return { key: "ui.updPending", cls: "pend" };
-  if (u && u.available) return { key: "ui.updAvailable", cls: "new" };
-  if (u && u.checked_at) return { key: "ui.updUpToDate", cls: "ok" };
-  return { key: "ui.updChecking", cls: "wait" };
+  if (u && u.available) return { key: "ui.updAvailable", cls: "new", v: verText(u.latest) };
+  if (u && u.checked_at) return { key: "ui.updUpToDate", cls: "ok", v: verText(state.version) };
+  /* Todavía sin datos: si el ajuste está APAGADO se dice («Comprobación
+     apagada»); si está encendido se enseña el reposo «Actualizado · vX»
+     mientras el panel pide la PRIMERA comprobación (el backend solo comprueba
+     cuando se lo piden: ver el auto-chequeo de paintUpdate). */
+  if (!updEnabled()) return { key: "ui.updOff", cls: "pend" };
+  return { key: "ui.updUpToDate", cls: "ok", v: verText(state.version) };
 }
 
 function paintUpdate() {
   const sw = $("#updSwitch");
-  if (!sw) return;
-  const u = updInfo();
-  const on = updEnabled();
-  sw.setAttribute("aria-checked", String(on));
+  if (sw) sw.setAttribute("aria-checked", String(updEnabled()));
 
+  const u = updInfo();
+  const prog = u ? Number(u.progress) || 0 : 0;
+  const downloading = updBusy || (prog > 0 && prog < 100 && u && u.available === true);
+  const avail = !!(u && u.available === true && !u.applied && !u.error);
+
+  /* El ESTADO del pie es, a la vez, el BOTÓN: al día solo informa
+     («Actualizado · vX», no pulsable); con versión nueva o error se vuelve
+     pulsable (data-action="1", acento + puntero + subrayado + foco) y al
+     pulsarlo se abre el diálogo propio (onUpdLink → buscar/instalar). No hay
+     enlace aparte: el mismo elemento es estado y acción. */
   const st = updStatus(u);
   const stEl = $("#updState");
   if (stEl) {
-    const txt = t(st.key);
-    if (stEl.textContent !== txt) stEl.textContent = txt;
-    stEl.dataset.state = st.cls;
-    stEl.title = txt;
+    if (!st) {
+      stEl.hidden = true;
+      stEl.textContent = "";
+      stEl.dataset.action = "0";
+      stEl.disabled = true;
+    } else {
+      let txt = t(st.key);
+      if (st.pct > 0) txt += " " + Math.round(st.pct <= 1 ? st.pct * 100 : st.pct) + "%";
+      else if (st.v) txt += " \u00B7 " + st.v;
+      stEl.hidden = false;
+      if (stEl.textContent !== txt) stEl.textContent = txt;
+      stEl.dataset.state = st.cls;
+      stEl.title = txt;
+      /* Pulsable cuando hay algo que hacer: versión nueva (INSTALAR, en acento)
+         o comprobación manual (BUSCAR: al día, sin datos o con error — así no
+         se pierde la búsqueda a mano al haber quitado el enlace «Actualizar»).
+         Mientras descarga o busca queda inerte. */
+      let act = "0";
+      if (!downloading && !updSearching) act = avail ? "install" : "check";
+      stEl.dataset.action = act;
+      stEl.disabled = (act === "0");
+      const aria = act === "install"
+        ? t("ui.updInstallAria").replace("{v}", verText(u.latest))
+        : (act === "check" ? t("ui.updSearchAria") : txt);
+      if (stEl.getAttribute("aria-label") !== aria) stEl.setAttribute("aria-label", aria);
+    }
   }
 
   /* Progreso: el backend lo publica 0..100; se aceptan también 0..1. Solo se
-     enseña mientras descarga (o justo al empezar), y nunca con la comprobación
-     apagada. */
-  const prog = u ? Number(u.progress) || 0 : 0;
+     enseña mientras descarga (o justo al empezar). */
   let pct = prog > 0 ? (prog <= 1 ? prog * 100 : prog) : -1;
   if (updBusy && pct < 0) pct = 0;
-  if (!on) pct = -1;
   if (pct >= 0) pct = Math.max(0, Math.min(100, pct));
   const box = $("#updProg");
   if (box) box.hidden = pct < 0;
   const fill = $("#updProgFill");
   if (fill && pct >= 0) fill.style.width = Math.round(pct) + "%";
 
-  /* La acción «Actualizar» solo cuando hay algo que aplicar y no está en
-     marcha; un aviso pendiente (ya descargado o reiniciando) no la repite. */
-  const go = $("#updApply");
-  if (go) {
-    go.hidden = !(on && u && u.available === true && !u.applied && !u.error
-                  && !updBusy && prog <= 0);
+  /* COMPROBACIÓN AUTOMÁTICA de arranque: el backend NO comprueba solo al
+     arrancar (solo cuando se lo piden), así que el panel pide UNA vez la
+     comprobación cuando ya hay /state real y el ajuste está ENCENDIDO. Con el
+     ajuste apagado NO se llama (cero salidas a la red, el criterio de
+     privacidad del proyecto). `u` es /state.update: si es null aún no llegó el
+     primer /state y no se dispara. */
+  if (!updAutoChecked && u && updEnabled() && !u.checked_at &&
+      !updBusy && !updSearching) {
+    updAutoChecked = true;
+    send("check_update");
   }
 }
 
@@ -2674,8 +2995,8 @@ function paintUpdate() {
    inmediata; el estado real llega por /state.update. */
 async function toggleUpdateCheck() {
   const on = !updEnabled();
-  const u = updInfo();
-  if (u) u.enabled = on; else state.check_updates = on;   // respuesta inmediata
+  state.check_updates = on;                    // fuente real (respuesta inmediata)
+  const u = updInfo(); if (u) u.enabled = on;  // espejo, por compatibilidad
   paintUpdate();
   await send("check_updates", on);
   if (on) await send("check_update");
@@ -2703,6 +3024,47 @@ function openUpdDialog() {
 function closeUpdDialog() {
   const dlg = $("#updDialog");
   if (dlg) dlg.hidden = true;
+}
+
+/* Diálogo propio de BÚSQUEDA: el enlace «Actualizar» pregunta antes de tocar
+   la red. No envía nada por su cuenta. */
+function openUpdCheckDialog() {
+  const dlg = $("#updCheckDialog");
+  if (!dlg) return;
+  dlg.hidden = false;
+  paintI18n();                     // el diálogo, en el idioma de la interfaz
+  paintIcons(dlg);                 // iconos SVG en línea de sus botones
+  const c = $("#updCheckGo");
+  if (c) c.focus();
+}
+
+function closeUpdCheckDialog() {
+  const dlg = $("#updCheckDialog");
+  if (dlg) dlg.hidden = true;
+}
+
+/* El enlace de la franja: con una versión nueva YA conocida abre el diálogo de
+   descarga (con las notas); si no, el de búsqueda. */
+function onUpdLink() {
+  if (updBusy || updSearching) return;
+  const u = updInfo();
+  if (u && u.available === true && !u.applied && !u.error) openUpdDialog();
+  else openUpdCheckDialog();
+}
+
+/* Buscar: «Buscando…» visible mientras responde y el resultado REAL (de
+   /state.update) en la franja. Va con force=true: es una búsqueda MANUAL del
+   autor, así que consulta GitHub aunque la comprobación automática esté
+   apagada. No bloquea la interfaz: el POST devuelve y luego se refresca. */
+async function runUpdateSearch() {
+  closeUpdCheckDialog();
+  if (updSearching || updBusy) return;
+  updSearching = true;
+  paintUpdate();                   // enseña «Buscando…» ya
+  await send("check_update", { force: true });
+  merge(await getState());
+  updSearching = false;
+  paint();                         // el resultado, con la versión
 }
 
 /* Aplicar: SOLO desde el diálogo (POST update). Mientras descarga, el progreso
@@ -2784,6 +3146,7 @@ function paint() {
   paintIcon();
   paintI18n();
   paintSelects();
+  paintGpu();
   paintAppearance();
   paintMic();
   paintMicMeter();
@@ -2810,16 +3173,8 @@ function paint() {
   }
   paintMeetMic();
   paintMicTest();
-  const dot = $("#statusDot");
-  dot.className = "dot" + (state.status_kind ? " " + state.status_kind : "");
-  /* El estado activo se pinta según el idioma de la interfaz; los estados
-     neutros (error del micro, etc.) llegan ya escritos del backend. */
-  const stText = state.st === "recording" ? t("ui.statusListening")
-    : state.st === "transcribing" ? t("ui.statusTranscribing")
-    : (state.status || t("ui.statusReady"));
-  $("#statusText").textContent = stText;
-  const ver = $("#ver");
-  if (ver) ver.textContent = verText(state.version);
+  /* La PIL DE ESTADO se eliminó: la cabecera y la barra ya no la llevan, y su
+     feedback (hablar / transcribir) lo da el medidor de entrada. */
 }
 
 /* ---------------- cambio de atajos (dictado y cancelar) ---------------- */
@@ -3079,6 +3434,14 @@ function wire() {
     paint();
     send("engine", state.engine);
   });
+  /* Tarjeta gráfica: es EL MISMO control que el motor (un <select> dentro de
+     .select-wrap, mejorado por el desplegable propio), así que elegir un
+     dispositivo (o «Automático») dispara aquí su `change` —igual que el <select>
+     nativo o el de motor— y manda la acción gpu_device, que guarda y RELANZA el
+     motor. El teclado (flechas, Inicio/Fin, Intro/espacio, Escape) lo lleva el
+     propio desplegable, sin código aparte. */
+  const gpuSel = $("#selGpu");
+  if (gpuSel) gpuSel.addEventListener("change", e => gpuApply(e.target.value));
   $("#selModel").addEventListener("change", e => {
     state.model = e.target.value;
     paint();
@@ -3163,15 +3526,8 @@ function wire() {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); addWord(); }
   });
 
-  /* Espera antes de transcribir: presets rápidos + cantidad libre. */
-  buildWaitPresets();
-  const waitInput = $("#waitInput");
-  if (waitInput) {
-    waitInput.addEventListener("keydown", e => {
-      if (e.key === "Enter") { e.preventDefault(); applyWaitInput(); }
-    });
-    waitInput.addEventListener("change", applyWaitInput);
-  }
+  /* Espera antes de transcribir: UNA barra deslizable (0,5-10 s). */
+  wireWaitSlider();
 
   /* audios: selección múltiple → cola */
   $("#btnPickAudio").addEventListener("click", () => $("#audioFiles").click());
@@ -3182,8 +3538,9 @@ function wire() {
      envía nada: la descarga solo se lanza desde «Actualizar» del diálogo. */
   const updSw = $("#updSwitch");
   if (updSw) updSw.addEventListener("click", toggleUpdateCheck);
-  const updGo = $("#updApply");
-  if (updGo) updGo.addEventListener("click", openUpdDialog);
+  /* El ESTADO del pie ES la acción: se pulsa cuando hay algo que hacer. */
+  const updStateEl = $("#updState");
+  if (updStateEl) updStateEl.addEventListener("click", onUpdLink);
   const updDlg = $("#updDialog");
   const updCancel = $("#updCancel");
   if (updCancel) updCancel.addEventListener("click", closeUpdDialog);
@@ -3192,6 +3549,17 @@ function wire() {
   if (updDlg) {
     updDlg.addEventListener("click", e => {
       if (e.target === updDlg) closeUpdDialog();     // clic fuera: cancela
+    });
+  }
+  /* diálogo de BÚSQUEDA: «Actualizar» pregunta antes de tocar la red */
+  const updCheckDlg = $("#updCheckDialog");
+  const updCheckCancel = $("#updCheckCancel");
+  if (updCheckCancel) updCheckCancel.addEventListener("click", closeUpdCheckDialog);
+  const updCheckGo = $("#updCheckGo");
+  if (updCheckGo) updCheckGo.addEventListener("click", runUpdateSearch);
+  if (updCheckDlg) {
+    updCheckDlg.addEventListener("click", e => {
+      if (e.target === updCheckDlg) closeUpdCheckDialog();   // clic fuera: cancela
     });
   }
 
@@ -3306,6 +3674,7 @@ function wire() {
 
   window.addEventListener("keydown", e => {
     if (e.key === "Escape") {
+      if (updCheckDlg && !updCheckDlg.hidden) { closeUpdCheckDialog(); return; }
       if (updDlg && !updDlg.hidden) { closeUpdDialog(); return; }
       if (quitDlg && !quitDlg.hidden) { closeQuit(); return; }
       if (!hkCapturing) cmd("hide");
@@ -3313,12 +3682,8 @@ function wire() {
   });
 }
 
-function setStatus(text, kind) {
-  state.status = text;
-  state.status_kind = kind || "";
-  $("#statusDot").className = "dot" + (kind ? " " + kind : "");
-  $("#statusText").textContent = text;
-}
+/* La pil de estado se eliminó (el feedback lo da el medidor de entrada): ya no
+   hay nodo de estado que pintar. */
 
 /* ---------------- desplegable propio ----------------
    El popup de un <select> nativo no se puede estilizar (Chrome solo le aplica
@@ -3394,6 +3759,10 @@ function ddLabel(wrap) {
   const { sel, btn, val } = wrap.dd;
   const opt = sel.options[sel.selectedIndex];
   val.textContent = opt ? opt.textContent : "";
+  /* El detalle del elegido (la tarjeta: nombre COMPLETO + aviso de la integrada)
+     también en el control PLEGADO, para no perderlo con la lista cerrada. El
+     motor (sin título por opción) no cambia. */
+  if (opt && opt.title) btn.title = opt.title; else btn.removeAttribute("title");
   if (sel.id === "selSource") {
     let d = btn.querySelector(".src-dot");
     if (!d) { d = srcDotEl(false); btn.insertBefore(d, val); }
@@ -3427,6 +3796,18 @@ function ddOpen(wrap, focus) {
     lab.className = "dd-lab";
     lab.textContent = o.textContent;
     it.appendChild(lab);
+    /* Detalle por opción que no cabe en la etiqueta visible (la tarjeta: su
+       nombre COMPLETO con el aviso de la integrada): se conserva en el title —y,
+       el nombre completo, en el aria— del propio ítem; la marca corta (p. ej.
+       «En uso») se pinta como distintivo tras la etiqueta. */
+    if (o.title) it.title = o.title;
+    if (o.getAttribute("aria-label")) it.setAttribute("aria-label", o.getAttribute("aria-label"));
+    if (o.dataset.badge) {
+      const bd = document.createElement("span");
+      bd.className = "dd-badge";
+      bd.textContent = o.dataset.badge;
+      it.appendChild(bd);
+    }
     /* Opción NO compatible con el equipo: se ve (para que quien tenga esa GPU
        sepa que existe), pero queda deshabilitada y con el motivo en una línea. */
     if (o.disabled) {
@@ -3635,6 +4016,7 @@ async function poll() {
     const s = await getState();
     if (s) { if (merge(s)) paint(); else paintLevels(); }
   }
+  gpuTick();                                     // estado «aplicando» de la tarjeta
   setTimeout(poll, live ? POLL_LIVE : POLL_IDLE);
 }
 

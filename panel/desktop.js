@@ -13,15 +13,16 @@
  *   2. Dibuja la barra: la onda de la marca, el nombre «Dicta» y los botones
  *      minimizar/maximizar/cerrar, con los tokens del panel, así sigue el tema
  *      claro/oscuro solo.
- *   3. MUEVE la pil de estado (#status, con #statusDot/#statusText) de la
- *      cabecera a la barra. Se mueve el nodo —no se recrea— para que app.js
- *      siga actualizándola igual (mismos ids).
+ *   3. La barra NO lleva pil de estado ni enlace «Actualizar»: ambos se
+ *      eliminaron. Solo el icono, «Dicta», el hueco de arrastre y los botones.
  *   4. Habla con el backend por `window.pywebview.api`: los métodos
  *      minimize() / restore() / maximize() / close() / isMaximized().
+ *   5. REDIMENSIONADO: ocho tiras invisibles en los bordes del viewport piden
+ *      al backend el tamaño nativo por ese borde (ver `buildResizeEdges`).
  *
- * En la barra solo hay: el ICONO de la app, «Dicta» y la PIL de estado (más los
- * botones de ventana). No hay título/subtítulo ni selector de tema: el tema se
- * elige en Apariencia.
+ * En la barra: ICONO de la app, «Dicta», la PIL de estado (izquierda), el hueco
+ * de arrastre, el enlace «Actualizar» (derecha) y los botones de ventana. No hay
+ * título/subtítulo ni selector de tema: el tema se elige en Apariencia.
  *
  * El ARRASTRE: los elementos llevan la clase `pywebview-drag-region`
  * (`webview.DRAG_REGION_SELECTOR`) como marca de zona, pero quien mueve la
@@ -89,9 +90,8 @@
         'px;flex:0 0 auto}',
       '.dtbar-title{display:flex;align-items:center;font-weight:600;',
       'letter-spacing:-.01em;color:var(--text);white-space:nowrap}',
-      // La pil de estado, movida desde la cabecera, se centra en la barra.
-      '.dtbar .status{align-self:center;margin-left:var(--sp-2,8px);',
-      'margin-right:10px}',
+      // El hueco flexible (.dtbar-drag) ocupa todo el centro de la barra: es la
+      // zona de arrastre. Ya no hay pil de estado ni enlace «Actualizar».
       '.dtbar-drag{flex:1 1 auto;min-width:24px}',
 
       '.dtbar-btns{display:flex;align-items:stretch;margin-left:var(--sp-2,8px)}',
@@ -258,14 +258,10 @@
 
     bar.appendChild(brand);
     bar.appendChild(title);
-    // El hueco flexible va ANTES de la pil: así la pil queda a la derecha,
-    // pegada a los botones de la ventana (el autor lo pidió así).
+    // El hueco flexible ocupa TODO el centro de la barra: es la zona de
+    // arrastre grande. (La pil de estado se ELIMINÓ y el enlace «Actualizar» se
+    // retiró: la barra ya solo lleva icono + «Dicta» + botones de ventana.)
     bar.appendChild(drag);
-    // 3. La pil de estado se MUEVE desde la cabecera (mismos ids para app.js).
-    var pil = document.getElementById('status');
-    if (pil) {
-      bar.appendChild(pil);
-    }
     bar.appendChild(btns);
     document.body.appendChild(bar);
 
@@ -288,10 +284,66 @@
     });
   }
 
+  /* ------------------------------------------ 5. bordes de redimensionado */
+  /* La ventana es SIN MARCO: Windows no dibuja la franja de redimensionado y,
+     además, el control de WebView2 cubre TODO el cliente (medido con
+     WindowFromPoint: en cualquier borde devuelve el hijo
+     `Chrome_RenderWidgetHostHWND`, nunca el form), así que el form nunca recibe
+     WM_NCHITTEST y no hay bordes nativos que agarrar. Estas tiras INVISIBLES
+     (6 px) en los ocho bordes del viewport recogen el `mousedown` y piden al
+     backend el redimensionado NATIVO por ese borde
+     (`pywebview.api.resize_window(edge)`), que arranca el bucle de tamaño de
+     Windows tal cual (respeta el mínimo de 800x520). El CURSOR lo pone el CSS
+     (`n-resize`/`e-resize`/`nwse-resize`…), así que «se ve» como cualquier
+     ventana. Son `position:fixed` y no entran en el flujo: NO tocan la
+     maquetación (mismo raíl, mismas filas, mismos tokens). */
+  function buildResizeEdges() {
+    var EDGE = 6;                            // grosor sensible del borde, en px
+    var strips = [
+      // esquinas y bordes comparten z-index: las esquinas se añaden DESPUÉS,
+      // así que en la esquina manda la esquina (gana el último en el DOM).
+      ['top',         'n-resize',  'left:0;right:0;top:0;height:' + EDGE + 'px'],
+      ['bottom',      's-resize',  'left:0;right:0;bottom:0;height:' + EDGE + 'px'],
+      ['left',        'w-resize',  'left:0;top:0;bottom:0;width:' + EDGE + 'px'],
+      ['right',       'e-resize',  'right:0;top:0;bottom:0;width:' + EDGE + 'px'],
+      ['topleft',     'nw-resize', 'left:0;top:0;width:' + EDGE + 'px;height:' + EDGE + 'px'],
+      ['topright',    'ne-resize', 'right:0;top:0;width:' + EDGE + 'px;height:' + EDGE + 'px'],
+      ['bottomleft',  'sw-resize', 'left:0;bottom:0;width:' + EDGE + 'px;height:' + EDGE + 'px'],
+      ['bottomright', 'se-resize', 'right:0;bottom:0;width:' + EDGE + 'px;height:' + EDGE + 'px']
+    ];
+    var s = document.createElement('style');
+    s.id = 'dicta-resize-css';
+    // z-index por ENCIMA de la barra (60): el borde SUPERIOR tiene que poder
+    // agarrarse aunque la barra ocupe todo el ancho de arriba — como en
+    // Windows, donde el filo de arriba de la barra de título redimensiona.
+    s.textContent = '.dtresize{position:fixed;z-index:70;user-select:none}';
+    document.head.appendChild(s);
+    strips.forEach(function (e) {
+      var d = document.createElement('div');
+      d.className = 'dtresize';
+      d.dataset.edge = e[0];
+      d.style.cssText = e[2] + ';cursor:' + e[1];
+      d.addEventListener('mousedown', function (ev) {
+        if (ev.button !== 0) return;
+        ev.preventDefault();
+        ev.stopPropagation();      // que no lo tome el arrastre de la barra
+        var edge = d.dataset.edge;
+        withApi(function (a) {
+          if (typeof a.resize_window === 'function') a.resize_window(edge);
+        });
+      });
+      document.body.appendChild(d);
+    });
+  }
+
   reserveHeight();
   if (document.body) {
     buildBar();
+    buildResizeEdges();
   } else {
-    document.addEventListener('DOMContentLoaded', buildBar, { once: true });
+    document.addEventListener('DOMContentLoaded', function () {
+      buildBar();
+      buildResizeEdges();
+    }, { once: true });
   }
 })();

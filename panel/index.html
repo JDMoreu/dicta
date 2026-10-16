@@ -28,10 +28,10 @@
        bajo la barra nativa de Windows. -->
   <header class="app-head">
     <span class="brand" data-icon="wave" data-size="19"></span>
-    <div class="status" id="status">
-      <span class="dot" id="statusDot"></span>
-      <span id="statusText" data-i18n="ui.statusReady">Listo para escuchar</span>
-    </div>
+    <!-- La CABECERA queda LIMPIA: solo el icono de la marca. La pil de estado
+         se ELIMINÓ (el autor: «no aporta nada, ya está el note que te da
+         feedback») y el enlace «Actualizar» se retiró del todo (su función la
+         hace ahora el ESTADO del pie, que se pulsa cuando hay versión nueva). -->
   </header>
 
   <div class="app-body">
@@ -126,6 +126,37 @@
             </div>
           </div>
 
+          <!-- Tarjeta gráfica: SOLO cuando el motor en uso publica `devices`
+               (Vulkan/CUDA…; viene VACÍO en Auto y CPU, así que entonces no se
+               pinta nada: nada de listas vacías). Es EL MISMO control que el
+               motor: un <select> dentro de .select-wrap, así que el desplegable
+               propio lo mejora igual —en reposo se ve SOLO la opción elegida y al
+               pulsar se despliega la lista para elegir otra, volviendo a plegarse
+               al elegir—. Ofrece «Automático» (value 'auto') y cada tarjeta con su
+               nombre YA LIMPIO (el controlador se conserva, junto con el aviso de
+               la integrada, en el title/aria). Al elegir se manda la acción
+               gpu_device (el motor RELANZA: tarda unos segundos) y se enseña un
+               estado discreto «aplicando / cargando motor» que se refresca al
+               terminar. -->
+          <div class="row" id="gpuRow" hidden>
+            <span class="tile accent" data-icon="gpu" data-size="16"></span>
+            <div class="txt">
+              <b data-i18n="ui.gpuTitle">Tarjeta gráfica</b>
+              <span class="sub" data-i18n="ui.gpuHint">Cuál usa el motor</span>
+              <span class="gpu-busy" id="gpuBusy" hidden>
+                <span class="gpu-spin" data-icon="refresh" data-size="13" data-sw="2.2"></span>
+                <span data-i18n="ui.gpuApplying">Aplicando… cargando motor</span>
+              </span>
+              <p class="gpu-note hint" id="gpuNote" hidden></p>
+            </div>
+            <div class="ctl sel">
+              <div class="select-wrap" id="gpuWrap">
+                <select id="selGpu" data-i18n-aria="ui.gpuAria" aria-label="Tarjeta gráfica"></select>
+                <span class="chev" data-icon="chevron-down" data-size="14" data-sw="2.2"></span>
+              </div>
+            </div>
+          </div>
+
           <div class="row">
             <span class="tile accent" data-icon="layers" data-size="16"></span>
             <div class="txt">
@@ -141,10 +172,14 @@
           </div>
         </div>
 
-        <!-- Espera antes de transcribir: UN título con su icono, la explicación en
-             una línea y, debajo, los botones de segundos + la cantidad libre.
-             El autor pidió quitar el subtítulo redundante y los textos de relleno
-             (el rango válido vive en el title del campo, no en otra línea). -->
+        <!-- Espera antes de transcribir: LÍNEA/REGLA corta en el raíl derecho de
+             SU MISMA fila (junto al título y a la píldora con el valor). Una
+             BARRA limpia: un CARRIL suave (--surface-2 + --edge, la misma
+             superficie que el cajón del medidor) con el tramo recorrido ENCENDIDO
+             en acento y el tirador (el mismo de la perilla del umbral) centrado
+             verticalmente en el carril. SIN marcas verticales ni NINGUN TEXTO. El
+             valor vive SOLO en la píldora; el rango y el paso van a la ayuda del
+             control (title/aria). -->
         <div class="group" id="waitGroup">
           <div class="g-head wait-head">
             <span class="tile accent" data-icon="timer" data-size="16"></span>
@@ -152,19 +187,18 @@
               <b data-i18n="ui.grpWait">Espera antes de transcribir</b>
               <span class="sub" data-i18n="ui.waitHint">el silencio que espera antes de cerrar la frase</span>
             </div>
-            <span class="val" id="waitValue">1 s</span>
-          </div>
-          <div class="row-body wait-body">
-            <div class="presets" id="waitPresets" role="group"
-                 data-i18n-aria="ui.waitPresets" aria-label="Espera rápida"></div>
-            <div class="input-row wait-row">
-              <label class="wait-lab" for="waitInput" data-i18n="ui.waitCustom">Otra cantidad</label>
-              <input id="waitInput" type="text" inputmode="decimal" autocomplete="off"
-                     spellcheck="false" data-i18n-ph="ui.waitCustom"
-                     data-i18n-title="ui.waitRange" placeholder="Otra cantidad">
-              <span class="wait-unit" data-i18n="ui.waitUnitS">segundos</span>
+            <div class="ctl">
+              <div class="wait-rule" id="waitSlider" role="slider" tabindex="0"
+                   aria-valuemin="0.5" aria-valuemax="10" aria-valuenow="1.5"
+                   aria-valuetext="1,5 s"
+                   data-i18n-aria="ui.waitAria" aria-label="Espera antes de transcribir"
+                   data-i18n-title="ui.waitDragHint" title="Arrastra para ajustar la espera">
+                <span class="wait-track" aria-hidden="true"></span>
+                <span class="wait-fill" id="waitFill" aria-hidden="true"></span>
+                <span class="imtr-thr" id="waitKnob"><i></i></span>
+              </div>
+              <span class="imtr-val" id="waitValue">1,5 s</span>
             </div>
-            <p class="hk-error" id="waitError" hidden></p>
           </div>
         </div>
 
@@ -193,52 +227,35 @@
             </div>
           </div>
 
-          <!-- ENTRADA Y UMBRAL: UN SOLO control integrado. Antes eran dos
-               deslizadores sueltos (sensibilidad y umbral) que movían lo mismo y
-               no dejaban ver cómo se graduaba nada.
-                 · Izquierda: medidor VERTICAL de barras con el nivel de entrada
-                   EN VIVO (/state.rms) sobre una escala en dB, y la MARCA del
-                   umbral ARRASTRABLE (sube/baja para fijar el umbral del
-                   detector de voz).
-                 · Derecha: el nivel de voz EN HORIZONTAL con su estado.
-               La sensibilidad ya no es un mando aparte: el umbral que se fija
-               aquí ES el que usa el detector (thr = umbral / sensibilidad), así
-               que se gradúa en un sitio, con la escala a la vista y el valor
-               real en dBFS. -->
-          <div class="row stack" id="micLevelRow">
-            <div class="row-top">
-              <span class="tile accent" data-icon="sliders" data-size="16"></span>
-              <div class="txt">
-                <b data-i18n="ui.levelTitle">Entrada y umbral</b>
-                <span class="sub" data-i18n="ui.levelHint">Arrastra la marca para fijar el umbral: tu voz se oye cuando sube por encima.</span>
-              </div>
-              <span class="meter-state" id="micMeterState" data-state="quiet"
-                    data-i18n="ui.micNoVoice">Sin voz</span>
+          <!-- ENTRADA Y UMBRAL: UNA fila como las demás. Icono + texto a la
+               IZQUIERDA y el medidor HORIZONTAL a la DERECHA, dentro del raíl de
+               la fila (.ctl). El medidor es ancho y bajo (no come altura), lleva
+               el nivel de entrada EN VIVO (/state.rms) en recuadros coloreados
+               verde/ámbar/rojo según el nivel y la PERILLA del umbral
+               ARRASTRABLE (ratón y flechas). Debajo, las ETIQUETAS DE dBFS
+               (0/-20/-40/-60/-80). La sensibilidad no es un mando aparte: el
+               umbral que se fija aquí ES el que usa el detector
+               (thr = umbral / sensibilidad). -->
+          <div class="row" id="micLevelRow">
+            <span class="tile accent" data-icon="sliders" data-size="16"></span>
+            <div class="txt">
+              <b data-i18n="ui.levelTitle">Entrada y umbral</b>
+              <span class="sub" data-i18n="ui.levelHint">Arrastra la perilla para fijar el umbral.</span>
             </div>
-            <div class="row-body">
-              <div class="mic-integrated">
-                <div class="vmeter-wrap">
-                  <div class="vmeter" id="micMeter" data-state="quiet" role="slider" tabindex="0"
-                       aria-valuemin="0" aria-valuemax="100" aria-valuenow="30"
-                       data-i18n-aria="ui.sensPeak" aria-label="Umbral de voz">
-                    <div class="vmeter-bars" id="micMeterBars" aria-hidden="true"></div>
-                    <span class="vmeter-thr" id="micMeterThr"><i></i></span>
-                  </div>
-                  <div class="vscale" id="micScale" aria-hidden="true"></div>
+            <div class="ctl imtr-ctl">
+              <div class="imtr-col">
+                <div class="imtr" id="micMeter" data-state="quiet" role="slider" tabindex="0"
+                     aria-valuemin="0" aria-valuemax="100" aria-valuenow="30"
+                     data-i18n-aria="ui.sensPeak" aria-label="Umbral de voz"
+                     data-i18n-title="ui.micMeterDrag" title="Arrastra para fijar el umbral">
+                  <div class="imtr-bars" id="micMeterBars" aria-hidden="true"></div>
+                  <span class="imtr-thr" id="micMeterThr"><i></i></span>
                 </div>
-                <div class="hlevel">
-                  <div class="hlevel-head">
-                    <b data-i18n="ui.liveVoice">Nivel de voz</b>
-                    <span class="hlevel-val" id="micMeterVal">&mdash;</span>
-                  </div>
-                  <div class="hmeter" id="liveMeter" data-state="quiet" aria-hidden="true">
-                    <span class="hmeter-fill" id="liveMeterFill"></span>
-                    <span class="hmeter-thr" id="liveMeterThr"></span>
-                  </div>
-                  <div class="hscale-row" id="liveScale" aria-hidden="true"></div>
-                </div>
+                <div class="imtr-scale" id="micScale" aria-hidden="true"></div>
               </div>
-              <p class="meter-note" id="micThrNote">&nbsp;</p>
+              <!-- LECTURA COMPACTA del umbral, junto al medidor; el detalle
+                   (sensibilidad ×N, rango) va al title/aria, no a la vista. -->
+              <span class="imtr-val" id="micThrNote">&mdash;</span>
             </div>
           </div>
 
@@ -276,6 +293,28 @@
               <button class="btn btn-soft btn-icon btn-sm" type="button" id="micTestGo"
                       data-icon="play" data-size="15"
                       data-i18n-aria="ui.testStart" data-i18n-title="ui.testStart"></button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Aplicación: la comprobación AUTOMÁTICA de versiones, movida aquí
+             desde el pie como una opción corta y discreta (el pie solo enseña
+             el ESTADO). El id #updSwitch se conserva para no tocar app.js. -->
+        <div class="group" id="appGroup">
+          <div class="g-head">
+            <h3 data-i18n="ui.grpApp">Aplicación</h3>
+          </div>
+          <div class="row">
+            <span class="tile accent" data-icon="refresh" data-size="16"></span>
+            <div class="txt">
+              <b data-i18n="ui.updAutoTitle">Comprobar actualizaciones</b>
+              <span class="sub" data-i18n="ui.updAutoHint">busca versiones nuevas al arrancar</span>
+            </div>
+            <div class="ctl">
+              <button class="switch" type="button" id="updSwitch" role="switch" aria-checked="true"
+                      data-i18n-aria="ui.checkUpdates" aria-label="Comprobar si hay versiones nuevas">
+                <span class="sw-thumb" aria-hidden="true"></span>
+              </button>
             </div>
           </div>
         </div>
@@ -709,23 +748,27 @@
        checked_at, progress, enabled, error, applied} y POST
        {action:"check_updates"|"check_update"|"update"}. -->
   <footer class="app-foot">
-    <button class="btn btn-ghost btn-icon" type="button" id="btnQuit"
+    <button class="btn btn-quit btn-icon" type="button" id="btnQuit"
             data-icon="power" data-size="16"
             data-i18n-aria="ui.quit" data-i18n-title="ui.quit"></button>
 
+    <!-- Lo ÚNICO de las actualizaciones que queda en el pie: SU ESTADO real
+         («Actualizado vX» / «Actualización disponible» / «Actualizando…») con su
+         barra de progreso. La versión gris suelta (#ver) y el enlace
+         «Actualizar» se retiraron de aquí —la versión ya viaja DENTRO del
+         estado y el enlace vive en la CABECERA, a la derecha— y el interruptor
+         de la comprobación automática se movió a los ajustes (grupo
+         «Aplicación», ver arriba). -->
     <div class="upd" id="updBar">
-      <span class="ver" id="ver"></span>
-      <span class="upd-state" id="updState">Actualizado</span>
+      <!-- EL ESTADO ES EL BOTÓN: al día es solo texto («Actualizado · vX»); con
+           versión nueva el MISMO elemento se vuelve pulsable («Actualización
+           disponible · vX») y al pulsarlo pregunta con el diálogo propio, busca
+           y, si hay versión nueva, instala con su progreso. app.js le pone el
+           estado, la interactividad (data-action) y el aria-label. -->
+      <button type="button" class="upd-state" id="updState" hidden></button>
       <span class="u-prog upd-prog" id="updProg" hidden>
         <span class="q-bar"><i id="updProgFill"></i></span>
       </span>
-      <button class="btn btn-primary btn-sm upd-go" type="button" id="updApply" hidden
-              data-i18n-aria="ui.updateNow" data-i18n-title="ui.updateNow"
-              data-i18n="ui.updateNow">Actualizar</button>
-      <button class="switch switch-sm" type="button" id="updSwitch" role="switch" aria-checked="false"
-              data-i18n-aria="ui.checkUpdates" aria-label="Comprobar si hay versiones nuevas">
-        <span class="sw-thumb" aria-hidden="true"></span>
-      </button>
     </div>
 
     <span class="foot-sp"></span>
@@ -789,6 +832,33 @@
               data-i18n-aria="ui.updateNow" data-i18n-title="ui.updateNow">
         <span data-icon="download" data-size="16"></span>
         <span data-i18n="ui.updateNow">Actualizar</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== buscar actualización =====================
+     El ENLACE «Actualizar» de la franja del pie PREGUNTA aquí antes de tocar la
+     red (diálogo propio de la app, nada de window.confirm). «Cancelar» NO envía
+     nada; «Buscar» lanza POST {action:"check_update"} y la franja enseña
+     «Buscando…» y después el resultado real (al día con la versión actual, o la
+     versión nueva con la opción de instalarla). Escape y clic fuera cancelan. -->
+<div class="dlg" id="updCheckDialog" role="dialog" aria-modal="true"
+     aria-labelledby="updCheckTitle" aria-describedby="updCheckBody" hidden>
+  <div class="dlg-box">
+    <span class="tile accent dlg-ico" data-icon="search" data-size="18"></span>
+    <h2 class="dlg-title" id="updCheckTitle" data-i18n="ui.updSearchTitle">¿Buscar una actualización?</h2>
+    <p class="dlg-body" id="updCheckBody" data-i18n="ui.updSearchBody"></p>
+    <div class="dlg-acts">
+      <button type="button" class="btn btn-soft" id="updCheckCancel"
+              data-i18n-aria="ui.cancel" data-i18n-title="ui.cancel">
+        <span data-icon="x" data-size="16"></span>
+        <span data-i18n="ui.cancel">Cancelar</span>
+      </button>
+      <button type="button" class="btn btn-primary" id="updCheckGo"
+              data-i18n-aria="ui.updSearchGo" data-i18n-title="ui.updSearchGo">
+        <span data-icon="search" data-size="16"></span>
+        <span data-i18n="ui.updSearchGo">Buscar</span>
       </button>
     </div>
   </div>
