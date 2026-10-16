@@ -230,7 +230,7 @@ SERVER_LOG = os.path.join(SCRIPT_DIR, "whisper_server.log")
 # aqui sale `/state.version` (el panel la pinta como vX.Y.Z) y el log de
 # arranque. El comparador de actualizaciones tambien la usa. `APP_VERSION` se
 # conserva como alias por compatibilidad.
-VERSION = "1.0.5"
+VERSION = "1.0.6"
 APP_VERSION = VERSION
 WHISPER_EXE = os.path.join(RESOURCE_DIR, "whisper_bin", "Release", "whisper-cli.exe")
 # Motores GPU: cada backend vive en su carpeta con su whisper-server + DLLs.
@@ -2607,6 +2607,27 @@ def _peaks(path: str, n: int = 600) -> dict:
     return out
 
 
+def _audio_ctype(name: str) -> str:
+    """Tipo MIME REAL del audio por su extension.
+
+    El navegador solo reproduce por URL lo que reconoce: servir todo como
+    ``application/octet-stream`` obligaba al panel a bajarse el fichero entero a
+    un blob (22 MB) antes de poder sonar.
+    """
+    return _AUDIO_CTYPE.get(os.path.splitext(name)[1].lstrip(".").lower(),
+                            "application/octet-stream")
+
+
+_AUDIO_CTYPE = {
+    "wav": "audio/wav", "wave": "audio/wav", "mp3": "audio/mpeg",
+    "m4a": "audio/mp4", "m4b": "audio/mp4", "aac": "audio/aac",
+    "flac": "audio/flac", "ogg": "audio/ogg", "oga": "audio/ogg",
+    "opus": "audio/ogg", "weba": "audio/webm", "webm": "audio/webm",
+    "mp4": "video/mp4", "m4v": "video/mp4", "mov": "video/quicktime",
+    "mkv": "video/x-matroska", "avi": "video/x-msvideo",
+}
+
+
 def _audio_sources(maxn: int = 6) -> list:
     """Fuentes de audio elegibles para grabar: todo el sistema o una app.
 
@@ -3073,6 +3094,29 @@ class UploadStore:
                             "duration": float(i["duration"] or 0.0),
                             "doc": (i["doc"] + ".md") if i["doc"] else ""})
         return out
+
+    def rename_doc(self, old_base: str, new_base: str):
+        """Sigue el rastro de un documento renombrado (empareja por NOMBRE BASE).
+
+        Sin esto, renombrar la transcripción dejaba la subida apuntando al nombre
+        viejo: dejaban de emparejarse —el emparejamiento es por nombre base— y el
+        panel volvía a pintar DOS tarjetas del mismo audio: una con el nombre
+        nuevo (el documento) y otra con el viejo (la subida).
+        """
+        old_base = str(old_base or "")
+        new_base = str(new_base or "")
+        if not old_base or not new_base or old_base == new_base:
+            return
+        with self.lock:
+            hit = [i for i in self.items
+                   if str(i.get("doc") or "") == old_base]
+            for i in hit:
+                i["doc"] = new_base
+                name = str(i.get("name") or "")
+                if name and os.path.splitext(name)[0] == old_base:
+                    i["name"] = new_base + os.path.splitext(name)[1]
+        if hit:
+            self._save()
 
     def remove(self, name):
         """Quita la ficha por su NOMBRE visible y borra su fichero del disco.
@@ -3968,7 +4012,12 @@ class ControlServer:
                         return
                     self._send(200, content.encode("utf-8"), "text/plain; charset=utf-8")
                 elif path == "/audio":
-                    # Audio (wav de reunión o original subido) en audios/.
+                    # Audio (wav de reunión o original subido) en audios/. Se
+                    # sirve con su TIPO REAL y con RANGOS: el navegador empieza a
+                    # sonar con el primer trozo y puede saltar sin bajarse el
+                    # fichero entero. Antes iba como octet-stream y sin rangos, y
+                    # el panel tenía que descargar 22 MB a un blob antes de sonar
+                    # (eso es lo que se notaba como «se traba» en audios largos).
                     import urllib.parse
                     qs = urllib.parse.parse_qs(
                         urllib.parse.urlparse(self.path).query)
@@ -3978,25 +4027,60 @@ class ControlServer:
                         return
                     f = os.path.join(AUDIOS_DIR, name_audio)
                     try:
-                        with open(f, "rb") as fh:
-                            raw = fh.read()
+                        total = os.path.getsize(f)
+                        fh = open(f, "rb")
                     except Exception:
                         self._send(404, b"not found", "text/plain")
                         return
-                    ctype = ("audio/wav" if f.lower().endswith(".wav")
-                             else "application/octet-stream")
                     disp = "inline" if "download" not in qs else "attachment"
-                    self.send_response(200)
-                    self.send_header("Content-Type", ctype)
-                    self.send_header("Content-Length", str(len(raw)))
+                    start, end, partial = 0, max(0, total - 1), False
+                    rng = str(self.headers.get("Range") or "").strip()
+                    if rng.startswith("bytes="):
+                        spec = rng[6:].split(",")[0].strip()
+                        a, _, b = spec.partition("-")
+                        try:
+                            if a == "":
+                                start = max(0, total - int(b))
+                                end = total - 1
+                            else:
+                                start = int(a)
+                                end = int(b) if b else total - 1
+                            partial = True
+                        except ValueError:
+                            partial = False
+                    if partial:
+                        start = max(0, min(start, max(0, total - 1)))
+                        end = max(start, min(end, max(0, total - 1)))
+                    else:
+                        start, end = 0, max(0, total - 1)
+                    length = end - start + 1
+                    self.send_response(206 if partial else 200)
+                    self.send_header("Content-Type", _audio_ctype(name_audio))
+                    self.send_header("Content-Length", str(length))
+                    self.send_header("Accept-Ranges", "bytes")
+                    self.send_header("Cache-Control", "no-store")
+                    if partial:
+                        self.send_header("Content-Range",
+                                         f"bytes {start}-{end}/{total}")
                     self.send_header(
                         "Content-Disposition",
                         f'{disp}; filename="{name_audio}"')
                     self.end_headers()
                     try:
-                        self.wfile.write(raw)
+                        # Se manda por trozos: nunca se carga el fichero entero
+                        # en memoria (un wav de reunión puede pasar de 60 MB).
+                        fh.seek(start)
+                        left = length
+                        while left > 0:
+                            chunk = fh.read(min(262144, left))
+                            if not chunk:
+                                break
+                            self.wfile.write(chunk)
+                            left -= len(chunk)
                     except Exception:
                         pass
+                    finally:
+                        fh.close()
                     return
                 elif path == "/peaks":
                     # Envolvente de la onda para la vista previa de audio.
@@ -4359,6 +4443,13 @@ class ControlServer:
                         if os.path.isfile(src_wav):
                             os.replace(src_wav, dst_wav)
                         log(f"Documento renombrado: {old_doc} -> {new_doc}")
+                        # La subida emparejada sigue el rastro del renombrado:
+                        # sin esto dejaban de emparejarse y volvían a salir DOS
+                        # tarjetas del mismo audio.
+                        try:
+                            _uploads.rename_doc(old_base, new_base)
+                        except Exception as e:
+                            log(f"No se pudo seguir el renombrado en subidas: {e}")
                         self._send(200, json.dumps(
                             {"ok": True, "name": new_doc}).encode("utf-8"))
                     except Exception as e:
@@ -6664,7 +6755,13 @@ class Overlay:
                           "size": os.path.getsize(os.path.join(DOCS_DIR, f)),
                           "mtime": os.path.getmtime(os.path.join(DOCS_DIR, f)),
                           "audio": (os.path.basename(w) if os.path.isfile(w)
-                                    else None)}
+                                    else None),
+                          # Peso del audio PROPIO del documento (el .wav de la
+                          # reunion, que se llama como el). El panel lo usa para
+                          # la cabecera de la tarjeta sin tener que decodificar
+                          # nada; 0 si no hay audio emparejado.
+                          "audio_size": (os.path.getsize(w)
+                                         if os.path.isfile(w) else 0)}
                          for f in (os.listdir(DOCS_DIR)
                                    if os.path.isdir(DOCS_DIR) else [])
                          for w in [os.path.join(

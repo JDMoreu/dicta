@@ -3381,3 +3381,364 @@ permitidos: `dicta.py` (solo comprobado, sin cambios), `dicta.spec`,
 **Aviso.** No se publicó nada ni se hizo push. Al terminar queda **UNA sola
 instancia VIVA** del `.exe` congelado, arrancada desde la carpeta limpia:
 `GET /state` **200**, `version="1.0.5"`.
+
+---
+
+## 65. UNA sola carta por audio (el `.md` ya no se pinta como una segunda pista), la flecha de la transcripción despliega de verdad, la reproducción no se traba y mientras transcribe se ve «Transcribiendo…» con su progreso
+
+**Problema reportado (grabando un vídeo de demostración):** *«al subir un audio se
+duplica, sale el audio solo y luego abajo otra carta del mismo audio pero que en
+lugar de terminar en `.mp3` termina en `.md` pero contiene la misma pista:
+debería ser una sola. Arregla la transcripción, que no se trabe, que no se
+bugee, y si se está transcribiendo que vaya diciendo que está transcribiendo y
+que muestre un progreso. Y quiero que sea rápido.»* Con el caso real del autor
+(captura): arriba `¿Cuánto costaría correr Claude Opus 5.5 en Local.mp3` (21,9 MB
+· 0:15:58) y debajo `¿Cuánto costaría correr Claude Opus 5.5 en Local.md`
+(15 KB) **con la duración y el reproductor del audio prestados**.
+
+### 65.1 La duplicación: el nombre base se cortaba por el ÚLTIMO PUNTO
+
+**Diagnóstico (reproducido en el DOM real, 2 tarjetas):** el panel empareja una
+subida con su documento por **nombre base** (`docStem`), y `docStem` quitaba la
+extensión con `/\.[^.]+$/`. Con un nombre que lleva un punto en medio
+—`… Claude Opus 5.5 en Local`— ese patrón no quita `.mp3`/`.md`: quita
+`5 en Local`, así que la subida quedaba como `… Opus 5` y el documento como
+`… Opus 5.5 en Local`. **No emparejaban**, la subida no se deduplicaba y salían
+las dos tarjetas; la del `.md` heredaba además `play` del índice de la cola
+(`queueAudioMap`) y con él la duración y el reproductor del audio. Estado real
+del panel antes del arreglo:
+
+```json
+"items": [
+ {"kind":"upload","name":"¿Cuánto costaría correr Claude Opus 5.5 en Local.mp3","state":"listo"},
+ {"kind":"doc","name":"¿Cuánto costaría correr Claude Opus 5.5 en Local.md","play":"28798f06be.mp3"}]
+"cards": [ {"name":"…Local.mp3","meta":"21.9 MB  ·  0:15:58"}, {"name":"…Local.md","meta":"15 KB","pvTime":"00:00 / 15:57"} ]
+```
+
+**Cambios (`panel/app.js`):**
+- `FILE_EXT` + `stripExt()`: se quita **UNA extensión real** (wav, mp3, m4a, md,
+  txt…), nunca lo que hay tras el último punto. `docStem`, `withExt`,
+  `downloadDoc`, `beginRename` y `loadTranscript` usan esa única regla (antes,
+  además, descargar un documento con punto en medio bajaba el fichero
+  equivocado).
+- Con subida emparejada, **la carta es la del AUDIO** que el autor añadió: su
+  nombre, su peso y su duración (`u.name` / `u.size` / `u.duration`) y dentro su
+  transcripción, sus descargas `.md`/`.txt` y su botón de borrado (que ya quitaba
+  las dos cosas). Una reunión grabada, que no tiene subida, enseña el `.wav` de
+  la grabación (su audio propio) y su peso real (`/state.docs[].audio_size`, nuevo).
+- **Un documento sin audio propio y sin subida que lo respalde NO pinta
+  reproductor ni duración** (`play` vacío ⇒ `.m-pv:empty` no ocupa).
+
+**Cambios (`dicta.py`):** `Uploads.rename_doc()` y su llamada desde
+`doc.rename`: al renombrar la transcripción la subida emparejada sigue su
+rastro (`doc` y su etiqueta). Sin esto, renombrar rompía el emparejamiento y
+las dos tarjetas volvían.
+
+**Validación:** mismo audio real subido por `POST /upload` (nombre con punto en
+medio) y DOM del panel:
+
+```json
+{"nCards":2,"items":[{"key":"doc:Prueba 5.5 en Local.md","kind":"doc","name":"Prueba 5.5 en Local.mp3","play":"0458261525.mp3"},
+                     {"key":"doc:base2min.md","kind":"doc","name":"base2min.wav","play":"5e91b82663.wav"}],
+ "cards":[{"name":"Prueba 5.5 en Local.mp3","meta":"14.6 MB  ·  0:16:00","pvTime":"00:00 / 16:00","tools":[".md",".txt"]},
+          {"name":"base2min.wav","meta":"3.7 MB  ·  0:02:00","pvTime":"00:00 / 02:00","tools":[".md",".txt"]}]}
+```
+
+Dos audios distintos ⇒ **dos cartas** (1:1 con `/state.uploads`), y ninguna
+segunda carta `.md`. En la reunión de prueba, la carta final es
+`reunion-20261016-135838.wav · 5.9 MB · 00:32` con `.md`/`.txt`/`.wav`.
+
+### 65.2 La flecha no hacía nada: la transcripción se quedaba VACÍA y el hueco vacío no ocupa
+
+**Diagnóstico:** el texto se pedía **una sola vez** por tarjeta y, si la petición
+fallaba (el `.md` se está escribiendo en ese momento), se marcaba como cargada
+dejando el hueco **vacío para siempre**; con `.m-transcript:empty { display:none }`
+desplegar no enseñaba nada y parecía que la flecha no hacía nada.
+
+**Cambios:** `loadTranscript` **reintenta** (6 intentos cada 900 ms) y el hueco
+dice «Cargando la transcripción…» mientras llega (y «No se pudo cargar la
+transcripción…» si se agota), de modo que desplegar SIEMPRE enseña algo. La
+flecha sigue siendo el único desplegable de la carta (no había copia duplicada
+del componente: `makeMediaCard` es el único constructor de cartas).
+
+**Validación (clic REAL de ratón por CDP en el botón, coordenadas 1155,275):**
+
+```json
+"before": {"aria":"false","trHidden":true,"trHeight":0}
+"open":   {"aria":"true","hidden":false,"clientH":345,"scrollH":3111,"textLen":15144,"ownScroll":true,"overflowY":"auto"}
+"closed": {"aria":"false","hidden":true,"clientH":0,"rowH":129}
+"reopened":{"aria":"true","hidden":false,"clientH":345,"textLen":15144}
+```
+
+Abre (aria-expanded `true`), muestra la transcripción entera con su propio
+desplazamiento (3111 px de contenido en 345 px de hueco), y vuelve a cerrar.
+**0 errores de consola, 0 peticiones fallidas** en todas las tandas.
+
+### 65.3 La reproducción: se bajaba el fichero ENTERO antes de sonar y la carta se repintaba mientras suena
+
+**Diagnóstico (medido):** `/audio` servía **todo** como
+`application/octet-stream` y **sin rangos**, así que el panel tenía que
+descargar el fichero completo (15–22 MB) a un `ArrayBuffer` y montar un `Blob`
+con el MIME corregido **antes** de empezar a sonar. Y el sondeo de `/state`
+(800 ms; 150 ms con algo capturando) llamaba a `paintMediaCard` en **cada
+vuelta**, también mientras suena: `paint: 7 · paintMedia: 7 · paintMediaCard: 7`
+en 6 s de reproducción.
+
+**Cambios (`dicta.py`, `panel/app.js`):**
+- `/audio` sirve el **tipo MIME real** por extensión (`_audio_ctype`) y
+  **soporta `Range`** (`206 Partial Content` + `Content-Range` +
+  `Accept-Ranges` + `no-store`), y escribe el fichero **por trozos de 256 KB**
+  (nunca 60 MB en memoria).
+- El panel usa la **URL directa** del audio (el navegador empieza con el primer
+  trozo y salta sin bajarse el fichero entero); el blob queda solo para tipos que
+  el navegador no reproduce por URL.
+- `mediaSig()`: la tarjeta se repinta **solo si cambia de verdad**. El tiempo que
+  corre lo pinta el propio reproductor por sus eventos (`play`/`timeupdate`).
+
+**Validación (clic real de reproducción en la carta de 16:00, 15,4 MB):**
+
+| medida | antes | ahora |
+|---|---|---|
+| `src` del audio | `blob:` (fichero entero en memoria) | `http://127.0.0.1:47810/audio?name=0458261525.mp3` |
+| primer sonido | — (blob completo antes de sonar) | **92 ms** |
+| avance en 6 s de reloj | — | **6,00 s** (0 % de retraso) |
+| `waiting` / `stalled` | — | 1 (arranque) / **0** |
+| `paintMediaCard` durante la reproducción | 7 | **0** |
+| peticiones a `/peaks` o `/audio` durante la reproducción | — | **0** (onda ya dibujada y cacheada) |
+
+Ondas medidas: `/peaks` en frío de un mp3 de 16 min = **1,17 s** (una vez por
+fichero, cacheado por ruta+mtime+tamaño), `/audio` 15,4 MB = **21 ms**,
+`/state` = **3,5 ms**.
+
+### 65.4 «Transcribiendo…» con su progreso (por ESTADO, nunca por «existe el fichero»)
+
+**Diagnóstico:** el `.md` **nace en cuanto empieza a escribir**, así que «existe
+el documento» no distingue nada. Peor: la reunión EN CURSO se pintaba como carta
+TERMINADA (su `.md` y su `.wav` ya existen durante la grabación), con reproductor
+y descargas.
+
+**Cambios:** la carta en curso decide por `/state.uploads[].state` y por el
+progreso de la cola (`queue[].progress` emparejado por nombre base) y pinta
+**«Transcribiendo… XX %»** con su barra (también «En espera» mientras está en
+cola, con la barra a 0). Mientras una reunión está viva, su carta es la del
+estado en curso —**sin reproductor** (el `.wav` se está escribiendo) y sin
+descargas— con la duración grabada en vivo.
+
+**Validación (línea de tiempo real de `/state`, audio de 16 min):**
+
+```
+ t=0,34 s  estado=transcribiendo  progreso=0,0 %     (en cola: 100 %  →  a los 10,69 s: listo)
+ t=1,60 s  estado=transcribiendo  progreso=2,7 %     .md ya existe y NO se pinta como terminado
+ t=3,14 s  estado=transcribiendo  progreso=21,6 %
+ t=10,69 s estado=listo           progreso=100 %
+```
+
+Reunión en curso (DOM real, a los 27 s de grabar):
+
+```json
+{"name":"reunion-20261016-135838.wav","meta":"0:00:26","tag":"Transcribiendo…","hasPv":false,"tools":[]}
+```
+
+y su `.md` (0 bytes en ese instante) **no** aparece como carta aparte. Al
+guardarla: `status=guardada · reunion-20261016-135838.md · audio_size=6.192.044`.
+**No se quedó colgada ninguna transcripción** (el registro no tiene errores de
+cola; los `pendiente` se reencolan al arrancar).
+
+### 65.5 Que sea RÁPIDO: medido con la dedicada, sin recargar el modelo por fichero
+
+**Medido (mismo equipo, motor en Vulkan, dispositivo 0 = AMD Radeon RX 9070):
+16:00 de audio (`Prueba 5.5 en Local.mp3`, 15,4 MB) ⇒ transcrito y `listo` en
+10,69 s ≈ 90× tiempo real ≈ 0,67 s por minuto de audio** (el propio `.md` del
+backend anota `transcribido en ~9s`); un `wav` de 2:00 ⇒ 2,09 s (arranque
+incluido, ≈ 1,05 s/min). El registro del servidor de voz confirma la dedicada y
+una única carga de modelo:
+
+```
+ggml_vulkan: 0 = AMD Radeon RX 9070 (AMD proprietary driver) | uma: 0 ...
+whisper_init_with_params_no_state: gpu_device = 0
+whisper_backend_init_gpu: using Vulkan0 backend
+```
+
+No hay recarga por fichero: un proceso `whisper-server` por sesión y la cola
+procesa en serie (`dicta.log`: `Motor GPU (Vulkan) listo (auto (dispositivo 0))`
+una sola vez por arranque).
+
+### 65.6 Qué instancia viva (y de qué carpeta)
+
+Antes de tocar nada se comprobó la instancia viva: **`GET /state` 200 en
+`127.0.0.1:47810` con las rutas reales del proyecto**
+(`C:\Users\JDMoreu\Documents\dicta\audios\…`, `…\textos\…`), servida desde
+`Documents\dicta\panel` (el `app.js` servido es **idéntico** al del disco:
+`sha256 b9f83b7f…`). El ejecutable de prueba congelado desde `Temp\dicta_clean`
+**ya no estaba corriendo** (su `dicta.log` cierra a las 13:01 con «Cierre
+limpio»), así que todos los ficheros de esta sesión son los del autor. La app se
+reinició una vez (`POST {"action":"quit"}` y relanzado con
+`.venv\Scripts\pythonw.exe dicta.py`, **sin elevar**) para cargar los cambios de
+`dicta.py`, y queda **viva** al terminar (`GET /state` 200, `version=1.0.5`,
+motor Vulkan). Nota: los dos ficheros del caso reportado
+(`…Opus 5.5 en Local.mp3` y su `.md`) ya no existían al empezar (el autor los
+borró antes de las 13:41); el fallo se reprodujo con un audio de prueba con el
+mismo tipo de nombre (un punto en medio).
+
+### 65.7 Lo que NO se tocó
+
+`dicta_ui.py`, `dicta_icon.py`, `README.md`, `CHANGELOG.md`. Nada publicado y sin
+push. El resto del panel se verificó después del arreglo con las capturas en
+claro y oscuro y **0 errores de consola**: medidor de entrada, barra de espera,
+desplegables de motor/tarjeta gráfica, botón de apagar, ventana redimensionable
+y el borrado en dos pasos (que sigue limpiando el documento Y su audio de
+trabajo). Los ficheros de prueba subidos durante la validación se borraron con la
+acción normal del panel (`doc.delete` + `upload.remove`); se conserva la
+grabación de reunión de 0:44 de la prueba.
+
+## 66. Reempaquetado portable 1.0.6: UNA sola carta por audio y el acordeón de la transcripción van DENTRO del `.exe` (verificado de punta a punta)
+
+**Objetivo.** Recompilar el ejecutable portable con el código ya terminado de
+esta tanda (una sola carta por audio, acordeón con reintentos, audio con rangos y
+sin repintar la carta mientras suena, «Transcribiendo…» con progreso) y dejar
+listo `dist/dicta-portable-1.0.6-windows-x64.zip`. Sin publicar nada.
+
+**Cambios:**
+
+- **`dicta.py`:** SÓLO la versión — `VERSION = "1.0.5"` → `"1.0.6"` (línea 233).
+  Nada más. `GET /state` publica `version="1.0.6"`.
+- **`dicta.spec` / `build_exe.bat`:** sin cambios (la receta que ya funcionaba).
+- **No se tocó** `panel/*`, `dicta_ui.py`, `dicta_icon.py`, `README.md`,
+  `CHANGELOG.md`. Nada publicado ni subido.
+
+**Build:** `./.venv/Scripts/python.exe -m PyInstaller --noconfirm --clean
+dicta.spec` → **rc=0 en 19,4 s**. `uac_admin=False` (`asInvoker`,
+`<requestedExecutionLevel level="asInvoker" uiAccess="false"/>` comprobado en el
+`.exe`), `console=False`. `dist/dicta` = `dicta.exe` (7.777.469 B) +
+`dicta.exe.config` (1.192 B, en la RAÍZ: TOC `EXECUTABLE` del spec) +
+`_internal/` + `models/ggml-small-q5_1.bin` (190.085.487 B). **Una sola copia de
+`panel/`** (`find dist/dicta -type d -name panel` → sólo
+`_internal/panel/`). Total 392 MB.
+
+### 66.1 (a) Arranque del `.exe` desde carpeta LIMPIA y con entorno saneado
+
+Copia limpia en `.tmp/clean106` (sin config, sin logs, sin datos), lanzada con
+`PYTHONPATH`, `VIRTUAL_ENV` y `PYTHONHOME` **vaciados** y
+`DICTA_WEBVIEW_DEBUG_PORT=9333`:
+
+- `GET /state` → **200** con `version="1.0.6"`, `engine=auto` resuelto
+  `vulkan`, `model=small`.
+- **La ventana es WebView2 de verdad** (no el respaldo de Chrome):
+  `http://[::1]:9333/json/version` → `Edg/155.0.4283.45`
+  (el PID del puerto es un `msedgewebview2.exe` hijo de `dicta.exe`; seis
+  procesos hijos). En el log: `Panel: backend WebView2 (pywebview) — ventana sin
+  marco, barra integrada en la página.` y `Panel abierto (WebView2, sin barra
+  nativa): http://127.0.0.1:47810/panel`.
+- `dicta 1.0.6 listo — alt+q, modo toggle, idioma es, cancelar alt+e
+  (elevado: no)`; `Motor GPU (Vulkan) listo (auto (dispositivo 0))`.
+  `dicta_crash.log` = **0 bytes**.
+
+### 66.2 (b) Transcripción REAL de punta a punta y UNA sola carta en el panel del congelado
+
+Subida real por `POST /upload` (multipart, `prueba-transcripcion-106.wav`,
+6.192.044 B, 0:32) a la instancia congelada:
+
+- Estado del panel/cola recorrido **completo**: `pendiente` (respuesta del POST,
+  0,04 s) → `transcribiendo` (0,24 s y 0,47 s) → **`listo` en 0,68 s**
+  ≈ 47× tiempo real (modelo `small`, Vulkan) y `progress=100`, con
+  `duration=0:32`. Documento: `textos/prueba-transcripcion-106.md`, **748 B**, con
+  texto real (empieza «Buenos días, esta es una prueba de transcripción…»).
+- **Panel del `.exe` congelado, por CDP sobre su WebView2** (`showSection('audios')`,
+  `merge(await getState()); paint()`): **`n_cards = 1`** — una sola carta
+  (`prueba-transcripcion-106.wav`, `5.9 MB · 0:00:32`), sin la segunda carta del
+  `.md`. Carta medida 754×496 px y el reproductor presente.
+- **El acordeón abre y cierra**: `aria-expanded` `false → true → false`
+  con el bloque de transcripción pasando de **0 px a 359 px** y de vuelta a 0, y
+  con el texto dentro (no un hueco).
+
+### 66.3 (c) Cierre limpio
+
+`POST {"action":"quit"}` → `{"ok": true}` (HTTP 200). Después: `/state` deja de
+responder, **0 procesos** (`dicta.exe`, `whisper-server.exe` y los seis
+`msedgewebview2.exe`), puertos **47123 / 47801 / 47810 libres**. VRAM dedicada
+del motor: **553 MB → 0** (total del escritorio 5126 → 4485 MB). En el log:
+`Cierre limpio (salida): liberando GPU y parando servicios...` y
+`Cierre limpio: GPU liberada y sin procesos whisper vivos.`
+
+### 66.4 (d) Pegado automático desde el `.exe` congelado — con un límite medido
+
+El carril de prueba del congelado ejecuta, **clasifica** el destino
+(`[normal: Chrome_WidgetWin_1 / brave.exe]` → combinación `ctrl+v`), copia el
+texto al portapapeles (comprobado leyéndolo: `prueba dicta 123`) y registra
+`Pegado inmediato en 0 ms` + `Texto insertado automáticamente en el campo`.
+
+**Límite honesto:** no se pudo cerrar la prueba contra un receptor PROPIO porque
+Windows no concede el primer plano a ningún proceso que no sea la ventana del
+autor. Medidas **cuatro vías** desde una ventana Tk propia (registrando el
+`HWND` y la clase en primer plano después de cada intento):
+`SetForegroundWindow`, `AttachThreadInput`+Alt simulado, clic sintético
+verificado con `WindowFromPoint` (= mi propia ventana) y `SwitchToThisWindow`
+→ en las cuatro el primer plano siguió siendo `Chrome_WidgetWin_1`. La sesión
+**no** está bloqueada (sin `LogonUI`) y este shell va en **Medium integrity**
+(`Mandatory Label\Medium Mandatory Level`), así que no es UIPI. Como la entrega
+apunta SIEMPRE a la ventana con el foco (`app.target_hwnd or
+GetForegroundWindow()`), el texto acabó en la ventana de Brave del autor
+(texto fijo de prueba `prueba dicta 123`); el portapapeles se guardó antes y **se
+restauró** después (su contenido era `Draft Session / off (run a cell to
+start)`). Para cerrar este punto con un receptor controlado hace falta que el
+autor no tenga el foco en otra aplicación.
+
+### 66.5 (e) ZIP: contenido, integridad y ausencia de datos del usuario
+
+`dist/dicta-portable-1.0.6-windows-x64.zip` — **261.466.399 B**,
+`sha256 bebc117cd93e0b988dbc513e0bbeba8331920af6ff691b93af18346e1115436d`, **1.077
+entradas**, **`testzip` OK (None)**, raíces exactamente
+`dicta.exe`, `dicta.exe.config`, `_internal/` y `models/`
+(`models/ggml-small-q5_1.bin` dentro). **Cero ficheros de datos del usuario**: se
+rastreó por patrón antes de comprimir y sobre la lista de entradas del ZIP
+(`audios/`, `textos/`, `uploads/`, `.tmp/`, `dicta.log`, `whisper_server.log`,
+`update.log`, `dicta_crash.log`, `dicta_config.json`, `uploads.json`) → **0**.
+Los ZIP anteriores no se tocaron.
+
+### 66.6 (f) El AYUDANTE del paquete sigue siendo el NUEVO
+
+Volcado desde el propio `.exe` (archivo del ejecutable → `marshal` → módulo
+`dicta` → `_helper_script`), sin aplicarlo (`.tmp/helper_dump.cmd`, 2.165 B):
+**50 líneas**, **10 pasos** escritos en `update.log`, espera por **PID** con
+`tasklist /FO CSV /NH` y fichero `pid_check.txt` (no un `findstr` de subcadena),
+`robocopy /E /NFL /NDL /NJH /NJS /NP /R:3 /W:2` con `/XF dicta_config.json
+update.log dicta.log dicta_crash.log`, relanzado del `.exe` al terminar, limpieza
+de `.tmp` y rama de error si la app sigue viva. `_spawn_helper` lleva
+`CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP` (`0x8000200`) y
+`+ CREATE_BREAKAWAY_FROM_JOB` (`0x1000000`) con sus DOS intentos y `stdin/stdout/
+stderr` a nulo.
+
+### 66.7 (g) Comprobación de versiones: consulta a GitHub y NO se anuncia a sí misma
+
+Con `check_updates=true` (real en `/state`, no un campo derivado), el `.exe`
+congelado consulta la API pública de releases al arrancar
+(`checked_at = 2026-10-16 14:10:58`) y devuelve `latest = "1.0.5"` con
+**`available = false`** — no se ofrece a sí mismo la 1.0.5. La comprobación
+**forzada** (`{"action":"check_update","value":{"force":true}}`) sale a la red y
+repite: `checked_at = 14:21:08`, `latest = 1.0.5`, `available = false`,
+`enabled = true`.
+
+### 66.8 (h) `panel/` dentro del paquete idéntico a disco (md5)
+
+| fichero | md5 |
+| --- | --- |
+| `index.html` | `ea69ede5285aa923a9b56c4384cf2ccd` |
+| `app.js` | `3de7c20d751ab097a877a3f78f2e6b70` |
+| `style.css` | `e60b4de4cc8d55479dd49bec0bbcc62f` |
+| `desktop.js` | `30b963c5a2654899c54ae2d83ee91c1a` |
+
+Coinciden **disco = `dist/dicta/_internal/panel/` = dentro del ZIP**: la copia del
+panel es la de esta tanda (es lo que caza un ZIP con el panel anterior).
+
+### 66.9 Limpieza y estado final
+
+Antes de probar se mataron las instancias sueltas de intentos anteriores (**2
+`pythonw.exe` que ejecutaban `dicta.py` —uno del venv y otro de
+`.dsh\dsh-runtimes`—, 1 `whisper-server.exe` con el modelo en VRAM y 1
+`chrome.exe --headless` de sondeo** que ocupaba el puerto 9333 y falseaba la
+comprobación de WebView2). Al terminar queda **UNA sola instancia viva**: la app
+de desarrollo desde el proyecto (`.venv\Scripts\pythonw.exe dicta.py`, sin
+elevar), `GET /state` **200** con `version="1.0.6"`, motor Vulkan y modelo `turbo`.
+Los ficheros de prueba de esta verificación viven en `.tmp/clean106` (instalación
+limpia de pruebas): **no se tocó nada del autor** —ni sus audios, ni sus
+documentos, ni la configuración del proyecto— y su portapapeles se restauró.

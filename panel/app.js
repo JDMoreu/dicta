@@ -154,6 +154,8 @@ const I18N = {
     "ui.updDialogBody": "Se descargará y aplicará la versión {v}. La descarga la hace tu propio equipo: no se envía nada a ningún sitio.",
     "ui.docTranscript": "Transcripción",
     "ui.transcriptToggle": "Mostrar u ocultar la transcripción",
+    "ui.docLoading": "Cargando la transcripción…",
+    "ui.docLoadFail": "No se pudo cargar la transcripción. Vuelve a abrirla.",
     "ui.docExists": "Ya existe un fichero con ese nombre.",
     "ui.docRenameFail": "No se pudo renombrar.",
     "ui.save": "Guardar",
@@ -452,6 +454,8 @@ const I18N = {
     "ui.updDialogBody": "Version {v} will be downloaded and applied. The download happens on your own computer: nothing is sent anywhere.",
     "ui.docTranscript": "Transcript",
     "ui.transcriptToggle": "Show or hide the transcript",
+    "ui.docLoading": "Loading the transcript…",
+    "ui.docLoadFail": "The transcript could not be loaded. Open it again.",
     "ui.docExists": "A file with that name already exists.",
     "ui.docRenameFail": "Could not rename.",
     "ui.save": "Save",
@@ -1764,6 +1768,13 @@ const ICON_PAUSE = '<svg viewBox="0 0 24 24" width="14" height="14" fill="curren
 
 const baseName = p => String(p || "").split(/[\\/]/).pop();
 const extOf = n => (String(n).match(/\.([a-z0-9]+)$/i) || [, ""])[1].toLowerCase();
+/* Extensiones que el panel reconoce DE VERDAD. Quitar la extension es quitar
+   UNA extension real: un nombre como «¿Cuanto costaria correr Claude Opus 5.5
+   en Local» NO termina en extension (lo que hay tras el ultimo punto es
+   «.5 en Local»), y cortarlo por ahi partia el nombre por la mitad: la subida y
+   su documento dejaban de emparejarse y salian DOS tarjetas del mismo audio. */
+const FILE_EXT = /\.(md|markdown|txt|wav|wave|mp3|m4a|m4b|aac|flac|ogg|oga|opus|wma|aif|aiff|amr|caf|mp4|m4v|mkv|mov|webm|avi|wmv|mpg|mpeg|3gp|bin)$/i;
+const stripExt = n => String(n || "").replace(FILE_EXT, "");
 /* ¿la duración pasa de una hora? -> etiqueta con horas (misma en ambos lados) */
 const hoursOf = d => (Number(d) || 0) >= 3600;
 
@@ -1782,11 +1793,19 @@ function fetchPeaks(name) {
   return peaksCache.get(name);
 }
 
-/* El endpoint sirve el audio como octet-stream y sin rangos: un blob con el
-   MIME real da reproducción y salto fiables (flac incluido). */
+/* El endpoint sirve el audio con su TIPO REAL y acepta rangos, así que se usa
+   la URL DIRECTA: el navegador empieza a sonar con el primer trozo y puede
+   saltar sin bajarse el fichero entero. Bajar TODO el audio a un blob (22 MB en
+   memoria) antes de sonar era lo que se notaba como «se traba» en audios largos.
+   Solo si el tipo no es reproducible por URL se corrige con un blob. */
 async function audioUrl(name) {
   const hit = audioUrls.get(name);
   if (hit) return hit;
+  if (AUDIO_MIME[extOf(name)]) {
+    const direct = `/audio?name=${encodeURIComponent(name)}`;
+    audioUrls.set(name, direct);
+    return direct;
+  }
   const r = await fetch(`/audio?name=${encodeURIComponent(name)}`, { cache: "no-store" });
   if (!r.ok) throw new Error("http " + r.status);
   const url = URL.createObjectURL(new Blob([await r.arrayBuffer()],
@@ -2067,6 +2086,11 @@ const UPLOAD_STATE = {
   listo:          { key: "ui.saved", cls: "ok" },
   error:          { key: "ui.stError", cls: "err" }
 };
+
+/* ¿La subida ya terminó (bien o mal)? El ESTADO lo manda su ficha de /state; el
+   progreso, la cola. Nunca se decide por «existe el .md», que se crea en cuanto
+   empieza a escribir. */
+const finishedState = st => st === "listo" || st === "error";
 
 /* El audio de un fichero SUBIDO vive en audios/ con un nombre interno (a
    diferencia de una reunión, que guarda el .wav con el nombre del documento).
@@ -2386,7 +2410,7 @@ function mediaItems() {
   const withExt = n => {
     const s = String(n || "");
     if (!s) return "";
-    return /\.[^.]+$/.test(s) ? s : s + ".md";
+    return stripExt(s) !== s ? s : s + ".md";
   };
 
   /* Índice por RAÍZ: enlaza una subida con su documento ya transcrito, para que
@@ -2405,11 +2429,31 @@ function mediaItems() {
     const k = docStem(baseName(q.doc || q.label || q.src));
     if (k && !qStem.has(k)) qStem.set(k, { status: String(q.status || ""), progress: Number(q.progress) || 0 });
   });
-  const finished = st => st === "listo" || st === "error";
+  const finished = finishedState;
+
+  /* Reunión EN CURSO: su .md ya existe (el backend lo escribe MIENTRAS
+     transcribe) y su .wav también, así que por «existe el fichero» se pintaba
+     como una tarjeta TERMINADA —con reproductor, duración y descargas— cuando
+     lo que pasa es que sigue grabando. Mientras la reunión vive, esa tarjeta es
+     la del estado en curso: «Transcribiendo…», sin reproductor (el .wav se
+     está escribiendo) y sin descargas. */
+  const mt = state.meeting || {};
+  const mStem = mt.active ? docStem(baseName(mt.doc || "")) : "";
+  const live = [];
+  if (mStem) {
+    live.push({
+      kind: "upload", key: "live:" + mStem, stem: mStem,
+      name: baseName(mt.wav || mt.doc || "") || baseName(mt.doc || ""),
+      size: 0, duration: Number(mt.seconds) || 0, play: "",
+      hasWav: false, upName: "", docName: "", doc: "",
+      transcribe: false, state: "transcribiendo", progress: -1
+    });
+  }
 
   docs.forEach(d => {
     const stem = docStem(d.name);
     if (stem) have.add(stem);
+    if (mStem && stem === mStem) return;         // la pinta su tarjeta en curso
     const u = upByStem.get(stem);
     /* Si su subida AÚN está en curso (pendiente/transcribiendo), NO es una
        transcripción terminada: la representa la tarjeta de la subida con su
@@ -2418,11 +2462,23 @@ function mediaItems() {
        no basta con que el fichero esté, hay que mirar el ESTADO de la subida. */
     if (u && !finished(u.state)) return;
     const own = baseName(d.audio);                 // .wav de la reunión, si lo hay
+    /* El audio de la carta: el .wav propio de la reunión o el audio REAL de la
+       subida que produjo este documento. Un documento que NO tiene audio propio
+       ni subida que lo respalde se queda SIN reproductor y SIN duración: la
+       onda prestada del audio de al lado era justo el fallo de la tarjeta
+       duplicada. */
+    const audio = own || (u && u.play) || qa.get(stem) || "";
     items.push({
       kind: "doc", key: "doc:" + d.name, stem,
-      name: d.name, size: Number(d.size) || 0,
-      duration: Number(d.duration) || 0,
-      play: own || qa.get(stem) || "",
+      /* Con subida emparejada, la carta es la del AUDIO que el autor añadió
+         (su nombre, su peso y su duración reales) y lleva DENTRO su
+         transcripción: una sola carta, no una del .mp3 y otra del .md. Una
+         reunión grabada no tiene subida: su audio es el .wav que se llama como
+         el documento, y la cabecera enseña ESE fichero. */
+      name: (u && u.name) || own || d.name,
+      size: Number(u ? u.size : (own ? (Number(d.audio_size) || d.size) : d.size)) || 0,
+      duration: Number(u ? u.duration : d.duration) || 0,
+      play: audio,
       hasWav: !!own, doc: withExt(d.name), docName: withExt(d.name),
       upName: u ? u.name : "",
       transcribe: true
@@ -2449,7 +2505,7 @@ function mediaItems() {
       progress: Number(u.progress) || Number(q.progress) || 0
     });
   });
-  return pend.concat(items);
+  return live.concat(pend, items);
 }
 
 /* Construye UNA tarjeta vacía; su contenido lo pone paintMediaCard en cada
@@ -2539,9 +2595,10 @@ function makeMediaCard() {
               stateRow, tag, progWrap, fill, open: false,
               transcript, tools, dlMd, dlTxt, dlWav,
               doc: "", base: "", transcribe: false, loaded: false,
+              tReady: false, tRetry: null,
               remove: null, delIdle: "ui.remove", delOn: "ui.confirmRemove",
               prev: {},
-              dispose() { if (r.pv) { disposePreview(r.pv); r.pv = null; } } };
+              dispose() { clearTimeout(r.tRetry); if (r.pv) { disposePreview(r.pv); r.pv = null; } } };
 
   /* desplegar/plegar la transcripción (sin repintar: solo su visibilidad) */
   acc.addEventListener("click", () => {
@@ -2584,18 +2641,35 @@ function makeMediaCard() {
 
 /* Carga el texto ENTERO de la transcripción una sola vez por tarjeta (endpoint
    /doc). Se prueba el nombre tal cual y sin extensión porque según de dónde
-   venga el documento llega con .md o sin ella. */
-async function loadTranscript(r, doc) {
-  for (const nm of [doc, doc.replace(/\.[^.]+$/, "")]) {
+   venga el documento llega con .md o sin ella.
+   Si el .md aún no se puede leer (se está escribiendo, o acaba de renombrarse)
+   se REINTENTA: antes se marcaba como cargado dejando el hueco VACÍO para
+   siempre, y entonces la flecha parecía no hacer nada (el hueco vacío no
+   ocupa). */
+async function loadTranscript(r, doc, tries) {
+  tries = tries || 0;
+  let txt = null;
+  for (const nm of [doc, stripExt(baseName(doc))]) {
     if (!nm) continue;
     try {
       const res = await fetch("/doc?doc=" + encodeURIComponent(nm), { cache: "no-store" });
       if (!res.ok) continue;
-      const txt = (await res.text()) || "";
-      if (r.el.isConnected && r.doc === doc) r.transcript.textContent = txt;
-      return;
+      txt = (await res.text()) || "";
+      break;
     } catch (_) { /* se prueba el siguiente */ }
   }
+  if (!r.el.isConnected || r.doc !== doc) return;
+  if (txt === null) {
+    if (tries < 6) {
+      r.tRetry = setTimeout(() => loadTranscript(r, doc, tries + 1), 900);
+      return;
+    }
+    r.tReady = false;
+    r.transcript.textContent = t("ui.docLoadFail");
+    return;
+  }
+  r.tReady = true;
+  r.transcript.textContent = txt;
 }
 
 function paintMediaCard(r, it) {
@@ -2606,7 +2680,9 @@ function paintMediaCard(r, it) {
     r.doc = it.doc || "";
     r.base = it.doc ? docStem(it.doc) : "";
     r.transcribe = !!it.transcribe;
-    r.loaded = false; r.transcript.textContent = "";
+    r.loaded = false; r.tReady = false;
+    clearTimeout(r.tRetry);
+    r.transcript.textContent = "";
     r.remove = { doc: it.docName || "", up: it.upName || "" };
     r.delIdle = it.transcribe ? "ui.docDelete" : "ui.remove";
     r.delOn = it.transcribe ? "ui.confirmDelete" : "ui.confirmRemove";
@@ -2641,24 +2717,33 @@ function paintMediaCard(r, it) {
     r.stateRow.hidden = true;
     r.acc.hidden = false;
     r.transcript.hidden = !r.open;
-    if (!r.loaded && r.doc) { r.loaded = true; loadTranscript(r, r.doc); }
+    if (!r.loaded && r.doc) {
+      /* Se pide UNA vez por tarjeta. Mientras llega, el hueco dice que está
+         cargando: así la flecha SIEMPRE enseña algo al desplegar (antes, si la
+         carga fallaba, el hueco quedaba vacío y desplegar parecía no hacer
+         nada). */
+      r.loaded = true;
+      if (!r.tReady) r.transcript.textContent = t("ui.docLoading");
+      loadTranscript(r, r.doc);
+    }
   } else {
     r.acc.hidden = true;
     r.transcript.hidden = true;
     r.stateRow.hidden = false;
     const st = UPLOAD_STATE[it.state] || UPLOAD_STATE.pendiente;
-    const lk = it.state + "|" + uiLocale();
+    /* Mientras no termina, la tarjeta dice «Transcribiendo…» (o «En espera» si
+       aún está en la cola) CON su porcentaje y su barra. El ESTADO lo manda la
+       ficha de la subida y el PROGRESO la cola: nunca «existe el fichero», que
+       no distingue nada (el .md nace en cuanto empieza a escribir). */
+    const prog = (finishedState(it.state) || Number(it.progress) < 0)
+      ? -1 : Math.max(0, Math.min(100, Number(it.progress) || 0));
+    const lk = it.state + "|" + Math.round(prog) + "|" + uiLocale();
     if (r.prev.st !== lk) {
       r.tag.className = "tag m-tag " + st.cls;
-      r.tag.textContent = t(st.key);
-      r.prev.st = lk;
-    }
-    const prog = it.state === "transcribiendo"
-      ? Math.max(0, Math.min(100, it.progress || 0)) : -1;
-    if (r.prev.prog !== prog) {
+      r.tag.textContent = t(st.key) + (prog >= 0 ? " " + Math.round(prog) + "%" : "");
       r.progWrap.hidden = prog < 0;
       if (prog >= 0) r.fill.style.width = prog + "%";
-      r.prev.prog = prog;
+      r.prev.st = lk;
     }
   }
 
@@ -2690,6 +2775,18 @@ function paintMediaCard(r, it) {
   confirmState(r.del, !!r.del.dataset.confirm, r.delIdle, r.delOn);
 }
 
+/* Firma de TODO lo que pinta una tarjeta: si no cambia, la tarjeta no se toca.
+   El sondeo de /state corre cada 800 ms (150 con algo capturando) y antes volvía
+   a pisar la tarjeta entera en cada vuelta, TAMBIÉN MIENTRAS SUENA su audio. El
+   tiempo que corre lo pinta el propio reproductor por sus eventos (play/
+   timeupdate), así que repintar la tarjeta no aportaba nada y solo hacía trabajo
+   en mitad de la reproducción. */
+function mediaSig(it, r) {
+  return [it.kind, it.key, it.name, it.size, it.duration, it.play, it.doc,
+          it.docName, it.upName, it.state, it.progress, it.hasWav,
+          it.transcribe, r.open ? 1 : 0, uiLocale()].join("|");
+}
+
 /* Pinta UNA SOLA lista, reconciliando en sitio (conserva reproductores, foco y
    selección). Cada tarjeta se crea una vez y se reutiliza. */
 function paintMedia() {
@@ -2699,9 +2796,10 @@ function paintMedia() {
   const seen = new Set();
   items.forEach((it, i) => {
     let r = mRows.get(it.key);
-    if (!r) { r = makeMediaCard(); mRows.set(it.key, r); }
+    if (!r) { r = makeMediaCard(); r.sig = null; mRows.set(it.key, r); }
     if (box.children[i] !== r.el) box.insertBefore(r.el, box.children[i] || null);
-    paintMediaCard(r, it);
+    const sig = mediaSig(it, r);
+    if (r.sig !== sig) { r.sig = sig; paintMediaCard(r, it); }
     seen.add(it.key);
   });
   mRows.forEach((r, key) => {
@@ -2733,7 +2831,7 @@ function downloadURL(url) {
 /* Descarga un documento por su NOMBRE BASE y su formato. El backend la sirve en
    GET /download?doc=<base>&kind=md|wav|txt. */
 function downloadDoc(filename, kind) {
-  const base = String(filename).replace(/\.[^.]+$/, "");
+  const base = stripExt(filename);
   downloadURL(`/download?doc=${encodeURIComponent(base)}&kind=${encodeURIComponent(kind)}`);
 }
 
@@ -2759,7 +2857,7 @@ function showRenameError(r, msg) {
    extensión (que NO se toca). Enter guarda, Escape sale, perder el foco guarda. */
 function beginRename(r, filename) {
   if (r.el.querySelector(".d-rename-wrap")) return;
-  const base = filename.replace(/\.[^.]+$/, "");
+  const base = stripExt(filename);
   const ext = filename.slice(base.length);          /* ".md" */
   const wrap = document.createElement("span");
   wrap.className = "d-rename-wrap";
@@ -2820,7 +2918,7 @@ async function renameDoc(oldName, newBase, r) {
 
 /* Nombre base sin extensión: «X.md» y la grabación «X» caen en la misma clave,
    que es lo que enlaza una subida con su documento ya transcrito. */
-function docStem(n) { return baseName(n).replace(/\.[^.]+$/, ""); }
+function docStem(n) { return stripExt(baseName(n)); }
 
 /* Borra lo que le toca a UNA tarjeta, todo de una vez y en orden:
      · doc -> POST {action:"doc.delete", doc:"NOMBRE.md"}   (textos/NOMBRE.md)
