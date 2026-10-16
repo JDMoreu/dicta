@@ -594,16 +594,12 @@ kbd.capturing { box-shadow: 0 0 0 2px var(--accent), inset 0 -2px 0 var(--line);
 /* La carta de reunión guardada: el reproductor ocupa TODO el ancho de la carta
    (antes tope de 420 px y quedaba sin alinear con sus propios botones). */
 .pv-slot { display: flex; flex-direction: column; align-items: stretch; width: 100%; min-width: 0; }
-.d-pv { width: 100%; min-width: 0; }
-/* La onda de la CARTA DE DOCUMENTO va acotada: el reproductor arranca en el
-   mismo raíl que el icono y que el bloque de transcripción, pero la onda ya no
-   se estira hasta el borde derecho (era una barra larguísima casi plana). El
-   tiempo cae justo detrás, así todo el bloque queda pegado al raíl izquierdo. */
-.d-pv .pv-track { max-width: 360px; }
-
-/* ---------- documentos: cada uno es una CARTA separada ----------
-   Las tarjetas van SUELTAS sobre el fondo del panel (sin caja contenedora):
-   claras (--surface), cada una delimitada por su propia luz (--lift-1). */
+/* ---------- audios y documentos: UNA SOLA tarjeta (.d-item .m-item) --------
+   Rehecha desde cero. Bloques APILADOS en columna, en un orden fijo, sin
+   posicionamiento absoluto ni alturas fijas:
+     cabecera · reproductor · (transcripción o estado + progreso) · descargas
+   El reproductor y la transcripción arrancan en el MISMO raíl que el icono y el
+   nombre (todo es hijo directo de la tarjeta), así nada se superpone. */
 .docs-wrap { display: flex; flex-direction: column; gap: var(--sp-2); width: 100%; }
 .docs { display: flex; flex-direction: column; gap: var(--sp-2); width: 100%; }
 .d-item {
@@ -613,55 +609,38 @@ kbd.capturing { box-shadow: 0 0 0 2px var(--accent), inset 0 -2px 0 var(--line);
   box-shadow: var(--lift-1);
   transition: background var(--t-micro) var(--ease-out);
 }
-.d-item.open { background: var(--surface); }
-.d-row { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
 
-/* flecha de despliegue: se ve y GIRA al abrir la carta */
-.d-chev { flex: 0 0 auto; color: var(--text-3); }
-.d-chev svg { transition: transform var(--t-fast) var(--ease-out); }
-.d-item.open .d-chev svg { transform: rotate(90deg); }
-.d-chev[aria-expanded="true"] { color: var(--accent); }
-
-.d-name {
-  flex: 1 1 auto; min-width: 0; padding: 0 2px; border: 0; background: none;
-  font: inherit; font-size: var(--fs-body); font-weight: 500; color: var(--text);
-  text-align: left; cursor: pointer; user-select: text;
+/* (1) cabecera: icono + nombre real + peso · duración + acciones */
+.m-head { display: flex; align-items: center; gap: var(--sp-2); min-width: 0; }
+.m-txt { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.m-name {
+  font-size: var(--fs-body); font-weight: 500; letter-spacing: -.01em;
+  color: var(--text); user-select: text;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
-.d-name:hover { color: var(--accent); text-decoration: underline; }
-.d-meta { flex: 0 0 auto; font-family: var(--fn-mono); font-size: var(--fs-micro);
-          color: var(--text-3); font-variant-numeric: tabular-nums; }
-
-/* descargas con el FORMATO a la vista (.md / .txt / .wav), no solo en el tooltip */
-.d-acts .btn-fmt, .d-tools .btn-fmt {
-  gap: var(--sp-1); padding: 0 var(--sp-2);
-  font-family: var(--fn-mono); font-size: var(--fs-micro); font-weight: 600;
+.m-meta {
+  font-family: var(--fn-mono); font-size: var(--fs-micro);
+  color: var(--text-3); font-variant-numeric: tabular-nums;
 }
-.btn-fmt .fmt { letter-spacing: .02em; }
+.m-acts { flex: 0 0 auto; display: inline-flex; align-items: center; gap: var(--sp-1); }
+.m-acts .btn { min-height: var(--h-control-sm); }
 
-/* renombrar en línea (doble clic sobre el nombre) */
-.d-rename-wrap { flex: 1 1 auto; min-width: 0; display: inline-flex; align-items: center; gap: var(--sp-1); }
-.d-rename {
-  flex: 1 1 auto; min-width: 0; min-height: var(--h-control-sm);
-  padding: 2px var(--sp-2); font-size: var(--fs-body);
-}
-.d-rename-wrap .d-ext { flex: 0 0 auto; font-family: var(--fn-mono); font-size: var(--fs-micro); color: var(--text-3); }
-.d-rename-wrap.bad .d-rename { box-shadow: 0 0 0 2px var(--err); }
-.d-rename-err { flex: 0 0 auto; font-size: var(--fs-micro); color: var(--err); }
+/* (2) reproductor: onda real (/peaks) + su duración, al raíl. La pista va
+   acotada para que no se estire en una barra larga y casi plana. */
+.m-pv { width: 100%; min-width: 0; }
+.m-pv:empty { display: none; }
+.m-pv .pv-track { max-width: 360px; }
 
-/* cuerpo desplegable: barra de acciones + reproductor del audio + la
-   transcripción COMPLETA. TODO vive en la MISMA tarjeta: descargar .md/.txt, el
-   audio (.wav), renombrar (lápiz), eliminar (dos pasos) y cerrar. */
-.d-body { display: flex; flex-direction: column; gap: var(--sp-2); }
-.d-tools { display: flex; align-items: center; gap: var(--sp-1); flex-wrap: wrap; min-width: 0; }
-/* mismos tamaños compactos que las acciones de la cabecera: no engordan la barra */
-.d-tools .btn { min-height: var(--h-control-sm); padding: 2px var(--sp-3); font-size: var(--fs-micro); }
-.d-tools .btn-icon { width: var(--h-control-sm); padding: 0; }
-.d-pv:empty { display: none; }
-/* La transcripción ENTERA, cómoda de leer, dentro de la MISMA tarjeta: la
-   misma línea de color que la vista de documento completo (el textarea va
-   sobre --surface-2), con scroll INTERNO y sin salirse del ancho de la carta. */
-.d-transcript {
+/* (3) estado + barra de progreso, o transcripción completa con su scroll */
+.m-state { display: flex; align-items: center; gap: var(--sp-2); width: 100%; min-width: 0; }
+.m-tag { flex: 0 0 auto; min-width: 100px; justify-content: center; }
+.m-tag.wait { color: var(--text-2); }
+.m-tag.run { background: var(--accent-sf); color: var(--accent); box-shadow: none; }
+.m-tag.ok { background: var(--ok-sf); color: var(--ok); box-shadow: none; }
+.m-tag.err { background: var(--err-sf); color: var(--err); box-shadow: none; }
+.m-prog { flex: 1 1 auto; display: flex; align-items: center; min-width: 0; }
+.m-prog .q-bar { flex: 1 1 auto; width: auto; }
+.m-transcript {
   min-width: 0; max-width: 100%;
   max-height: min(46vh, 480px); overflow: auto; overscroll-behavior: contain;
   padding: var(--sp-3) var(--sp-4);
@@ -670,46 +649,26 @@ kbd.capturing { box-shadow: 0 0 0 2px var(--accent), inset 0 -2px 0 var(--line);
   color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere;
   word-break: break-word; tab-size: 2; user-select: text;
 }
-.d-transcript:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-.d-transcript:empty { display: none; }
+.m-transcript:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.m-transcript:empty { display: none; }
 
-/* ---------- ficheros subidos (audios): una FICHA por archivo ----------
-   La MISMA piel que las tarjetas de Documentos (.d-item: superficie sólida,
-   su propia luz y NINGUNA caja contenedora alrededor), con su contenido
-   propio: azulejo, nombre, peso y duración, tapiña de estado y dos acciones
-   (ver documento / quitar). Raíl ÚNICO: el cuerpo de la ficha lleva el relleno
-   y la fila y los bloques apilados son hijos suyos, así que icono, texto,
-   reproductor y barra caen en el mismo borde izquierdo y derecho. */
-.zone-head { display: flex; align-items: baseline; gap: var(--sp-3); margin-bottom: var(--sp-3); }
-.group + .zone-head { margin-top: var(--sp-5); }
-.zone-head h3 { font-size: var(--fs-row); font-weight: 600; letter-spacing: -.01em; }
-.zone-head .hint { margin-left: auto; text-align: right; }
-
-.u-txt { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
-.u-name {
-  font-size: var(--fs-body); font-weight: 500; letter-spacing: -.01em;
-  color: var(--text); user-select: text;
-  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+/* (4) descargas con el FORMATO a la vista (.md / .txt / .wav) */
+.m-tools { display: flex; align-items: center; gap: var(--sp-1); flex-wrap: wrap; min-width: 0; }
+.m-tools .btn-fmt {
+  gap: var(--sp-1); padding: 0 var(--sp-2); min-height: var(--h-control-sm);
+  font-family: var(--fn-mono); font-size: var(--fs-micro); font-weight: 600;
 }
-.u-sub { font-family: var(--fn-mono); font-size: var(--fs-micro);
-         color: var(--text-3); font-variant-numeric: tabular-nums; }
+.btn-fmt .fmt { letter-spacing: .02em; }
 
-/* tapiña de estado: el mismo cromo que .tag, con el color del estado y un
-   ancho mínimo para que las cinco fichas formen UNA sola columna (izquierda y
-   derecha alineadas), en los dos idiomas */
-.u-tag { flex: 0 0 auto; min-width: 100px; justify-content: center; }
-.u-tag.wait { color: var(--text-2); }
-.u-tag.run { background: var(--accent-sf); color: var(--accent); box-shadow: none; }
-.u-tag.ok { background: var(--ok-sf); color: var(--ok); box-shadow: none; }
-.u-tag.err { background: var(--err-sf); color: var(--err); box-shadow: none; }
-
-.u-acts { flex: 0 0 auto; display: inline-flex; align-items: center; gap: var(--sp-1); }
-.u-acts .btn { min-height: var(--h-control-sm); padding: 2px var(--sp-2); font-size: var(--fs-micro); gap: var(--sp-1); }
-.u-acts .lbl { white-space: nowrap; }
-
-/* la barra de avance ocupa el raíl entero, nunca un ancho fijo */
-.u-prog { display: flex; align-items: center; width: 100%; min-width: 0; }
-.u-prog .q-bar { flex: 1 1 auto; width: auto; }
+/* renombrar en línea (la carta reutiliza la piel del panel) */
+.d-rename-wrap { flex: 1 1 auto; min-width: 0; display: inline-flex; align-items: center; gap: var(--sp-1); }
+.d-rename {
+  flex: 1 1 auto; min-width: 0; min-height: var(--h-control-sm);
+  padding: 2px var(--sp-2); font-size: var(--fs-body);
+}
+.d-rename-wrap .d-ext { flex: 0 0 auto; font-family: var(--fn-mono); font-size: var(--fs-micro); color: var(--text-3); }
+.d-rename-wrap.bad .d-rename { box-shadow: 0 0 0 2px var(--err); }
+.d-rename-err { flex: 0 0 auto; font-size: var(--fs-micro); color: var(--err); }
 
 /* ---------- franja de actualizaciones: pie, junto a la versión ----------
    UNA sola línea (versión + estado real + progreso + acción + interruptor),
@@ -995,7 +954,12 @@ select:focus-visible, input[type="text"]:focus-visible, textarea:focus-visible {
   background: rgba(0, 0, 0, .42);
 }
 .dlg-box {
-  width: min(372px, 100%);
+  width: min(420px, 100%);
+  /* La caja NUNCA se sale de la ventana: su alto máximo es la pantalla menos el
+     relleno del fondo atenuado. Con la ventana pequeña (900x600, 800x520) el
+     texto se desplaza por dentro y los botones del pie siguen a la vista. */
+  max-height: calc(100vh - (2 * var(--sp-5)));
+  min-height: 0; overflow: hidden;
   display: flex; flex-direction: column; align-items: center; gap: var(--sp-3);
   padding: var(--sp-6) var(--sp-5) var(--sp-5);
   border-radius: var(--r-group);
@@ -1003,8 +967,18 @@ select:focus-visible, input[type="text"]:focus-visible, textarea:focus-visible {
   box-shadow: var(--lift-3);
   text-align: center;
 }
-.dlg-ico { width: 36px; height: 36px; border-radius: 11px; }
-.dlg-title { font-size: var(--fs-title); font-weight: 600; letter-spacing: -.01em; }
-.dlg-body { font-size: var(--fs-secondary); color: var(--text-2); line-height: 1.5; }
-.dlg-acts { display: flex; gap: var(--sp-3); width: 100%; margin-top: var(--sp-2); }
+.dlg-ico { flex: 0 0 auto; width: 36px; height: 36px; border-radius: 11px; }
+.dlg-title { flex: 0 0 auto; font-size: var(--fs-title); font-weight: 600; letter-spacing: -.01em; }
+/* El CUERPO es lo ÚNICO que se desplaza (scroll propio): las notas largas de la
+   versión se leen enteras y el pie con los botones no se mueve nunca, así que
+   se puede confirmar o cancelar sin maximizar la ventana. */
+.dlg-body {
+  flex: 1 1 auto; min-height: 0; align-self: stretch; width: 100%;
+  max-height: min(56vh, 440px);
+  overflow: auto; overscroll-behavior: contain;
+  padding: 0 2px;
+  text-align: left; white-space: pre-wrap; overflow-wrap: anywhere;
+  font-size: var(--fs-secondary); color: var(--text-2); line-height: 1.5;
+}
+.dlg-acts { display: flex; gap: var(--sp-3); width: 100%; flex: 0 0 auto; margin-top: var(--sp-2); }
 .dlg-acts .btn { flex: 1 1 0; }

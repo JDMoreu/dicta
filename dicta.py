@@ -226,7 +226,7 @@ LOG_FILE = os.path.join(SCRIPT_DIR, "dicta.log")
 # aqui sale `/state.version` (el panel la pinta como vX.Y.Z) y el log de
 # arranque. El comparador de actualizaciones tambien la usa. `APP_VERSION` se
 # conserva como alias por compatibilidad.
-VERSION = "1.0.3"
+VERSION = "1.0.4"
 APP_VERSION = VERSION
 WHISPER_EXE = os.path.join(RESOURCE_DIR, "whisper_bin", "Release", "whisper-cli.exe")
 # Motores GPU: cada backend vive en su carpeta con su whisper-server + DLLs.
@@ -515,6 +515,169 @@ def download_update():
     return zip_path, tmp
 
 
+def _oem_encoding():
+    """Codepage OEM con la que cmd.exe lee un .bat (para rutas con acentos).
+
+    El ayudante es un .bat y lo interpreta cmd.exe, que NO lee UTF-8: hay que
+    escribirlo en la codepage OEM de la maquina o una ruta de usuario con
+    acentos se corrompe. `ascii` (lo que habia) directamente revienta.
+    """
+    try:
+        import ctypes
+        return "cp%d" % int(ctypes.windll.kernel32.GetOEMCP())
+    except Exception:
+        return "cp850"
+
+
+def _write_helper(path, lines):
+    """Escribe el .bat ayudante con finales CRLF y en la codepage de cmd.exe."""
+    text = "\r\n".join(lines) + "\r\n"
+    enc = _oem_encoding()
+    try:
+        data = text.encode(enc, "replace")
+    except LookupError:
+        data = text.encode("ascii", "replace")
+    with open(path, "wb") as fh:
+        fh.write(data)
+
+
+def _helper_script(staging, dest, exe, tmp, frozen, updlog, app_pid):
+    """Lineas del .bat ayudante de actualizacion.
+
+    El ayudante espera a que la app se CIERRE (por PID, con tope de tiempo),
+    copia el paquete COMPLETO con robocopy (con reintentos) y vuelve a arrancar
+    la app en su ruta nueva. Deja REGISTRO POR PASOS en `update.log`, junto a la
+    app, para poder diagnosticarlo si algo falla.
+
+    Dos detalles que son la diferencia entre funcionar y no funcionar:
+
+    * `/E` sin `/PURGE` SOBREESCRIBE lo que trae el paquete pero NO borra nada
+      mas, asi que la configuracion y los datos del usuario (audios, textos,
+      subidas, modelos extra) sobreviven; y `/XF` impide que el paquete pise
+      nunca `dicta_config.json` ni los registros.
+    * La espera mira la COLUMNA del PID (`/FO CSV` y la 2a columna con
+      `for /f`), no un `findstr` de subcadena: con `/NH` a secas el PID podia
+      coincidir con los digitos de la columna de memoria, y ademas
+      `findstr /C:,"PID",` NO casa nunca (comprobado: devuelve 1 contra una
+      linea que contiene ese texto), asi que el ayudante creia que la app ya
+      se habia cerrado y copiaba/relanzaba con la app viva.
+    """
+    L = [
+        "@echo off",
+        "rem Ayudante de actualizacion de dicta (generado por la app).",
+        "rem Espera a que la app se cierre, sustituye los ficheros del paquete y",
+        "rem la vuelve a arrancar. Deja registro por pasos en update.log.",
+        "setlocal enableextensions",
+        'set "LOG=%s"' % updlog,
+        'set "SRC=%s"' % staging,
+        'set "DST=%s"' % dest,
+        'set "EXE=%s"' % exe,
+        'set "APPPID=%d"' % app_pid,
+        'set "TMPU=%s"' % tmp,
+        'set "PIDCHK=%s"' % os.path.join(tmp, "pid_check.txt"),
+    ]
+    if not frozen:
+        pyw = os.path.join(os.path.dirname(sys.executable), "pythonw.exe")
+        if not os.path.isfile(pyw):
+            pyw = sys.executable
+        L += ['set "PYW=%s"' % pyw,
+              'set "SCRIPT=%s"' % os.path.abspath(__file__)]
+    L += [
+        '>>"%LOG%" echo [%DATE% %TIME%] == ayudante de actualizacion: iniciado '
+        '(app pid %APPPID%) ==',
+        '>>"%LOG%" echo [%DATE% %TIME%] paquete: %SRC%',
+        '>>"%LOG%" echo [%DATE% %TIME%] destino: %DST%',
+        "set /a W=0",
+        ":wait_app",
+        'set "ALIVE="',
+        'tasklist /FI "PID eq %APPPID%" /FO CSV /NH > "%PIDCHK%" 2>nul',
+        'for /f "usebackq tokens=2 delims=," %%a in ("%PIDCHK%") do '
+        'if "%%~a"=="%APPPID%" set "ALIVE=1"',
+        "if not defined ALIVE goto app_closed",
+        "ping -n 2 127.0.0.1 >nul",
+        "set /a W+=1",
+        "if %W% GEQ 90 goto app_alive",
+        "goto wait_app",
+        ":app_closed",
+        '>>"%LOG%" echo [%DATE% %TIME%] la app cerro (tras %W% s); copiando el '
+        'paquete completo...',
+        "set /a T=0",
+        ":copy",
+        'robocopy "%SRC%" "%DST%" /E /NFL /NDL /NJH /NJS /NP /R:3 /W:2 '
+        '/XF dicta_config.json update.log dicta.log dicta_crash.log '
+        '>>"%LOG%" 2>&1',
+        'set "RC=%ERRORLEVEL%"',
+        "set /a T+=1",
+        '>>"%LOG%" echo [%DATE% %TIME%] copia intento %T%: robocopy rc=%RC%',
+        "if %RC% GEQ 8 (",
+        "  if %T% GEQ 5 goto copy_failed",
+        "  ping -n 3 127.0.0.1 >nul",
+        "  goto copy",
+        ")",
+        '>>"%LOG%" echo [%DATE% %TIME%] paquete sustituido; relanzando la app...',
+    ]
+    if frozen:
+        L += ['start "" "%EXE%"',
+              '>>"%LOG%" echo [%DATE% %TIME%] app relanzada: %EXE%']
+    else:
+        L += ['cd /d "%DST%"',
+              'start "" "%PYW%" "%SCRIPT%"',
+              '>>"%LOG%" echo [%DATE% %TIME%] app relanzada: %PYW% %SCRIPT%']
+    L += [
+        'start "" /b cmd /c "ping -n 4 127.0.0.1 >nul & rd /s /q ""%TMPU%"""',
+        '>>"%LOG%" echo [%DATE% %TIME%] ayudante terminado.',
+        "exit /b 0",
+        ":copy_failed",
+        '>>"%LOG%" echo [%DATE% %TIME%] ERROR: robocopy no pudo completar '
+        '(rc=%RC%); NO se relanza.',
+        "exit /b 1",
+        ":app_alive",
+        '>>"%LOG%" echo [%DATE% %TIME%] ERROR: la app (pid %APPPID%) sigue viva '
+        'tras %W% s; no se toca nada.',
+        "exit /b 1",
+    ]
+    return L
+
+
+def _spawn_helper(helper, workdir):
+    """Lanza el ayudante DESACOPLADO del proceso de la app. Devuelve su PID.
+
+    Aqui estaban los DOS fallos que dejaban la actualizacion a medias:
+
+    1) Los descriptores heredados. Si el ayudante hereda la consola o el
+       registro al que esta redirigida la app, se queda colgado en cuanto la
+       app se cierra (una orden con tuberia sobre un `stdout` ya roto no
+       termina nunca): no copia nada ni la relanza. `stdin/stdout/stderr` van a
+       NULO y el ayudante escribe su registro en un FICHERO, sin tuberias.
+    2) `DETACHED_PROCESS` **NO** sirve para esto. Con DETACHED el ayudante se
+       queda SIN CONSOLA y cualquier herramienta que consulte el sistema
+       (`tasklist`) escribe en el VACIO: medido, devuelve **0 bytes** con
+       codigo 0. La espera por PID creia entonces que la app ya se habia
+       cerrado, copiaba con la app AUN VIVA (su `.exe` no se puede sustituir),
+       y relanzaba mientras la instancia vieja tenia el candado puesto: la
+       nueva salia con «dicta ya esta abierto» y se veia EXACTAMENTE «se
+       cierra, no se sustituye nada y no vuelve a abrirse».
+       `CREATE_NO_WINDOW` le da una consola PROPIA y OCULTA: `tasklist`
+       funciona, no aparece ninguna ventana y no depende de la app.
+       Ademas se intenta salir del job (`CREATE_BREAKAWAY_FROM_JOB`), con
+       respaldo si el job no lo permite (da `WinError 5`).
+    """
+    base = 0x08000000 | 0x00000200     # CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP
+    last = None
+    for flags in (base | 0x01000000, base):   # + CREATE_BREAKAWAY_FROM_JOB
+        try:
+            p = subprocess.Popen(
+                ["cmd", "/c", helper], creationflags=flags, close_fds=True,
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, cwd=workdir)
+            log(f"Actualizaciones: ayudante lanzado desacoplado "
+                f"(pid {p.pid}, flags 0x{flags:08x}).")
+            return p.pid
+        except OSError as e:
+            last = e
+    raise last if last is not None else RuntimeError("no se pudo lanzar")
+
+
 def prepare_update(zip_path, tmp):
     """Extrae el paquete y deja listo el ayudante que sustituye los ficheros.
 
@@ -535,37 +698,24 @@ def prepare_update(zip_path, tmp):
     with _UPDATE_LOCK:
         UPDATE_STATE["staged_dir"] = staging
         UPDATE_STATE["progress"] = 95
-    # Carpeta a sustituir y ejecutable de arranque.
+    # Carpeta a sustituir y orden de arranque del ejecutable.
     dest = SCRIPT_DIR
     exe = os.path.join(dest, "dicta.exe")
     frozen = _frozen()
     helper = os.path.join(tmp, "apply_update.cmd")
-    lines = [
-        "@echo off",
-        "rem Ayudante de actualizacion de dicta (generado por la app).",
-        "rem Espera a que la app se cierre, sustituye los ficheros y la",
-        "rem vuelve a arrancar. Se autoborra al terminar.",
-        "setlocal",
-        f'set "SRC={staging}"',
-        f'set "DST={dest}"',
-        f'set "EXE={exe}"',
-        f'set "PID={os.getpid()}"',
-        ":wait",
-        'tasklist /FI "PID eq %PID%" /NH 2>nul | findstr /C:"%PID%" >nul',
-        "if not errorlevel 1 (",
-        "  timeout /t 1 /nobreak >nul",
-        "  goto wait",
-        ")",
-        'robocopy "%SRC%" "%DST%" /E /NFL /NDL /NJH /NJS /NP >nul',
-        f'start "" "%EXE%"',
-        f'rd /s /q "{tmp}"',
-        "exit /b 0",
-    ]
-    with open(helper, "w", encoding="ascii", newline="\r\n") as fh:
-        fh.write("\n".join(lines) + "\n")
+    updlog = os.path.join(dest, "update.log")
+    lines = _helper_script(staging, dest, exe, tmp, frozen, updlog, os.getpid())
+    _write_helper(helper, lines)
+    try:
+        with open(updlog, "a", encoding="utf-8", errors="replace") as fh:
+            fh.write("[%s] app: paquete preparado (%s -> %s); ayudante %s\n"
+                     % (time.strftime("%Y-%m-%d %H:%M:%S"), staging, dest, helper))
+    except Exception:
+        pass
     with _UPDATE_LOCK:
         UPDATE_STATE["helper"] = helper
         UPDATE_STATE["portable"] = frozen
+        UPDATE_STATE["update_log"] = updlog
     return helper
 
 
@@ -593,29 +743,23 @@ def apply_update(launch=True):
     with _UPDATE_LOCK:
         UPDATE_STATE["progress"] = 100
     frozen = bool(UPDATE_STATE.get("portable"))
-    if not frozen:
-        # Modo fuente: no se puede reemplazar el codigo en marcha. Se deja
-        # descargado y verificado, y se explica el limite.
-        with _UPDATE_LOCK:
-            UPDATE_STATE["applied"] = "descargado (modo fuente)"
-        log("Actualizaciones: paquete descargado y verificado en "
-            f"{UPDATE_STATE.get('staged_dir')}. En modo fuente no se aplica "
-            "en caliente: usa el paquete portable.")
-        return {"ok": True, "staged": UPDATE_STATE.get("staged_dir"),
-                "applied": False, "helper": helper}
-    # Modo portable: lanzar el ayudante (desacoplado) y cerrar la app.
-    flags = 0x00000008 | 0x00000200      # DETACHED_PROCESS|CREATE_NEW_PROCESS_GROUP
+    # Se aplica en LOS DOS MODOS. Antes el modo fuente se quedaba en
+    # «descargado (modo fuente)» y quien probaba desde el codigo veia que «no
+    # se actualiza»; el ayudante relanza el ejecutable congelado o, en modo
+    # fuente, el interprete con este mismo script.
     try:
-        subprocess.Popen(["cmd", "/c", helper],
-                         creationflags=flags, close_fds=True,
-                         cwd=tmp)
+        hpid = _spawn_helper(helper, tmp)
     except Exception as e:
         with _UPDATE_LOCK:
             UPDATE_STATE["error"] = str(e)
+        log(f"Actualizaciones: no se pudo lanzar el ayudante ({e}).")
         return {"ok": False, "error": str(e)}
     with _UPDATE_LOCK:
         UPDATE_STATE["applied"] = "reiniciando"
-    log("Actualizaciones: ayudante lanzado; la app se cerrara para aplicar.")
+        UPDATE_STATE["helper_pid"] = hpid
+    log(f"Actualizaciones: ayudante lanzado (pid {hpid}); la app se cerrara "
+        f"para aplicar ({'portable' if frozen else 'fuente'}). "
+        f"Registro: {UPDATE_STATE.get('update_log')}")
     if launch:
         def _quit_soon():
             time.sleep(1.2)              # dar tiempo a responder el POST

@@ -78,8 +78,6 @@ const I18N = {
     "ui.uploads": "Ficheros subidos",
     "ui.uploadsHint": "Se guardan en la carpeta audios",
     "ui.uploadsEmpty": "Aún no has subido ningún fichero. Elige uno arriba y se guarda aquí.",
-    "ui.seeDoc": "Ver documento",
-    "ui.uploadRemove": "Quitar de la lista",
     "ui.confirmRemove": "¿Quitar?",
     "ui.stPending": "En espera",
     "ui.stError": "Error",
@@ -144,10 +142,7 @@ const I18N = {
     "ui.updateNow": "Actualizar",
     "ui.updDialogTitle": "¿Actualizar Dicta?",
     "ui.updDialogBody": "Se descargará y aplicará la versión {v}. La descarga la hace tu propio equipo: no se envía nada a ningún sitio.",
-    "ui.docExpand": "Ver transcripción",
-    "ui.docRead": "Abrir transcripción",
     "ui.docTranscript": "Transcripción",
-    "ui.docRenameHint": "Doble clic para renombrar",
     "ui.docExists": "Ya existe un fichero con ese nombre.",
     "ui.docRenameFail": "No se pudo renombrar.",
     "ui.save": "Guardar",
@@ -352,8 +347,6 @@ const I18N = {
     "ui.uploads": "Uploaded files",
     "ui.uploadsHint": "Saved in the audios folder",
     "ui.uploadsEmpty": "You haven't uploaded any file yet. Pick one above and it is kept here.",
-    "ui.seeDoc": "View document",
-    "ui.uploadRemove": "Remove from list",
     "ui.confirmRemove": "Remove?",
     "ui.stPending": "Waiting",
     "ui.stError": "Error",
@@ -418,10 +411,7 @@ const I18N = {
     "ui.updateNow": "Update",
     "ui.updDialogTitle": "Update Dicta?",
     "ui.updDialogBody": "Version {v} will be downloaded and applied. The download happens on your own computer: nothing is sent anywhere.",
-    "ui.docExpand": "View transcript",
-    "ui.docRead": "Open transcript",
     "ui.docTranscript": "Transcript",
-    "ui.docRenameHint": "Double-click to rename",
     "ui.docExists": "A file with that name already exists.",
     "ui.docRenameFail": "Could not rename.",
     "ui.save": "Save",
@@ -1850,27 +1840,6 @@ function makePreview(name, opts) {
 }
 
 /* ---------------- audios, reunión y documentos ---------------- */
-/* Reconcilia una lista en sitio: conserva reproductores, foco y selección. */
-function syncRows(box, cache, items, keyOf, make, update) {
-  const seen = new Set();
-  items.forEach((it, i) => {
-    const key = keyOf(it);
-    seen.add(key);
-    let row = cache.get(key);
-    if (!row) { row = make(it); cache.set(key, row); }
-    if (box.children[i] !== row.el) box.insertBefore(row.el, box.children[i] || null);
-    update(row, it);
-  });
-  cache.forEach((row, key) => {
-    if (seen.has(key)) return;
-    if (row.dispose) row.dispose();
-    row.el.remove();
-    cache.delete(key);
-  });
-}
-
-const uRows = new Map();
-
 /* Estado de un fichero subido -> texto y color de su tapiña (la misma escala
    que el resto del panel: en espera, transcribiendo, guardado, error). */
 const UPLOAD_STATE = {
@@ -1940,176 +1909,6 @@ function fmtSize(bytes) {
   if (b >= 1048576) return (b / 1048576).toFixed(1) + " MB";
   return Math.max(1, Math.round(b / 1024)) + " KB";
 }
-
-/* Carta de un fichero subido: la MISMA piel que una tarjeta de Documentos
-   (.d-item), con su azulejo, nombre, peso, duración y estado, y dos acciones:
-   ver el documento (si ya tiene transcripción) y QUITAR de la lista (dos
-   pasos). No hay descarga: el fichero ya es del usuario. */
-function makeUploadRow() {
-  const el = document.createElement("div");
-  el.className = "d-item u-item";
-
-  const row = document.createElement("div");
-  row.className = "d-row";
-
-  const tile = document.createElement("span");
-  tile.className = "tile accent u-tile";
-  tile.dataset.icon = "file-audio"; tile.dataset.size = "16";
-
-  const txt = document.createElement("span");
-  txt.className = "u-txt";
-  const name = document.createElement("b");
-  name.className = "u-name";
-  const sub = document.createElement("span");
-  sub.className = "u-sub";
-  txt.append(name, sub);
-
-  const tag = document.createElement("span");
-  tag.className = "tag u-tag";
-
-  const acts = document.createElement("span");
-  acts.className = "u-acts";
-
-  const open = document.createElement("button");
-  open.type = "button"; open.className = "btn btn-soft btn-sm u-open";
-  const openIco = document.createElement("span");
-  openIco.dataset.icon = "file-text"; openIco.dataset.size = "13";
-  const openLbl = document.createElement("span");
-  openLbl.className = "lbl";
-  open.append(openIco, openLbl);
-  open.addEventListener("click", () => open.dataset.doc && focusDocCard(open.dataset.doc));
-
-  const del = document.createElement("button");
-  del.type = "button"; del.className = "btn btn-danger btn-sm u-del";
-  const delIco = document.createElement("span");
-  delIco.dataset.icon = "trash"; delIco.dataset.size = "13";
-  const delLbl = document.createElement("span");
-  delLbl.className = "lbl";
-  del.append(delIco, delLbl);
-
-  acts.append(open, del);
-  row.append(tile, txt, tag, acts);
-
-  /* Progreso: solo MIENTRAS se transcribe (una barra no dice nada terminado). */
-  const prog = document.createElement("div");
-  prog.className = "u-prog"; prog.hidden = true;
-  const bar = document.createElement("span");
-  bar.className = "q-bar";
-  const fill = document.createElement("i");
-  bar.appendChild(fill);
-  prog.appendChild(bar);
-
-  /* Reproductor: solo si el backend da un nombre reproducible; nunca una onda
-     inventada (el audio ya terminado se escucha en su tarjeta de Documentos). */
-  const pvSlot = document.createElement("div");
-  pvSlot.className = "d-pv";
-
-  el.append(row, prog, pvSlot);
-
-  const r = { el, tile, name, sub, tag, open, openLbl, del, delLbl, prog, fill,
-              pvSlot, pv: null, prev: {},
-              dispose() { if (r.pv) { disposePreview(r.pv); r.pv = null; } } };
-
-  /* QUITAR de la lista: el patrón de DOS PASOS del panel (el mismo botón pasa a
-     «¿Quitar?» con relleno rojo) y solo el segundo clic llama al backend. */
-  del.addEventListener("click", async () => {
-    if (del.dataset.confirm) {
-      delete del.dataset.confirm;
-      setRemoveState(r, false);
-      const nm = del.dataset.name;
-      if (nm) await send("upload.remove", nm);
-      merge(await getState());
-      paint();
-      return;
-    }
-    del.dataset.confirm = "1";
-    setRemoveState(r, true);
-    setTimeout(() => {
-      if (!del.dataset.confirm || !del.isConnected) return;
-      delete del.dataset.confirm;
-      setRemoveState(r, false);
-    }, 2600);
-  });
-
-  paintIcons(el);                       // los tres iconos de la ficha, una vez
-  return r;
-}
-
-/* Texto y nombre accesible del botón destructivo según el paso: se ve «Quitar»
-   y, al confirmar, «¿Quitar?»; el nombre accesible (aria/title) dice el resto. */
-function setRemoveState(r, on) {
-  const lbl = on ? t("ui.confirmRemove") : t("ui.remove");
-  if (r.delLbl.textContent !== lbl) r.delLbl.textContent = lbl;
-  confirmState(r.del, on, "ui.uploadRemove", "ui.confirmRemove");
-}
-
-function paintUploadRow(r, it) {
-  if (r.prev.name !== it.name) {
-    r.name.textContent = it.name;
-    r.name.title = it.name;                    /* el nombre REAL del fichero */
-    r.del.dataset.name = it.name;
-    r.prev.name = it.name;
-  }
-  /* El dibujo dice de qué va: vídeo (pantalla) o cualquier otra cosa (audio). */
-  const ext = (it.name.split(".").pop() || "").toLowerCase();
-  const kind = /^(mp4|mkv|mov|avi|webm|m4v|wmv)$/.test(ext) ? "monitor" : "file-audio";
-  if (r.prev.kind !== kind) { setIcon(r.tile, kind, 16); r.prev.kind = kind; }
-
-  const bits = [fmtSize(it.size)];
-  if (it.duration) bits.push(fmtTime(it.duration, true));
-  const sub = bits.filter(Boolean).join("  ·  ");
-  if (r.prev.sub !== sub) { r.sub.textContent = sub; r.sub.hidden = !sub; r.prev.sub = sub; }
-
-  const st = UPLOAD_STATE[it.state] || UPLOAD_STATE.pendiente;
-  const stKey = it.state + "|" + uiLocale();
-  if (r.prev.state !== stKey) {
-    r.tag.className = "tag u-tag " + st.cls;
-    r.tag.textContent = t(st.key);
-    r.prev.state = stKey;
-  }
-
-  /* Acceso a la ficha de ESE documento (sin duplicar la transcripción): solo
-     cuando ya la tiene. El HUECO se reserva siempre (visibilidad, no `hidden`):
-     así la tapiña y las acciones caen en la misma columna en todas las fichas
-     y el juego de botones no baila cuando un fichero pasa de «en espera» a
-     «guardado», que es justo cuando aparece este botón. */
-  const doc = it.doc || "";
-  if (r.prev.doc !== doc) {
-    r.open.style.visibility = doc ? "" : "hidden";
-    r.open.tabIndex = doc ? 0 : -1;
-    r.open.setAttribute("aria-hidden", doc ? "false" : "true");
-    r.open.dataset.doc = doc;
-    r.prev.doc = doc;
-  }
-
-  const prog = it.state === "transcribiendo" ? Math.max(0, Math.min(100, it.progress || 0)) : -1;
-  if (r.prev.prog !== prog) {
-    r.prog.hidden = prog < 0;
-    if (prog >= 0) r.fill.style.width = prog + "%";
-    r.prev.prog = prog;
-  }
-
-  const play = it.play || "";
-  if (r.prev.play !== play) {
-    r.prev.play = play;
-    if (r.pv) { disposePreview(r.pv); r.pv = null; }
-    if (play) { r.pv = makePreview(play); r.pvSlot.appendChild(r.pv.el); }
-  }
-  if (r.pv) labelPreview(r.pv);                 // el idioma puede haber cambiado
-
-  /* Etiquetas (texto, aria-label y title) al idioma actual. */
-  if (r.prev.lab !== uiLocale()) {
-    r.openLbl.textContent = t("ui.seeDoc");
-    r.open.setAttribute("aria-label", t("ui.seeDoc"));
-    r.open.title = t("ui.seeDoc");
-    r.prev.lab = uiLocale();
-  }
-  setRemoveState(r, !!r.del.dataset.confirm);   // el sondeo repinta el idioma
-}
-
-/* Los ficheros subidos ya NO tienen lista propia: viven en la MISMA lista que
-   los documentos (paintMedia), porque «Audios» y «Documentos» son UNA sola
-   sección. uploadItems() sigue dando la forma de cada subida. */
 
 /* ---- reunión: hub con tres caras (inicio / en vivo / resumen) ---- */
 /* Duración legible. Con grabaciones largas añade las HORAS (2:00:00 en vez de
@@ -2332,119 +2131,324 @@ function syncMicTestPv(mt) {
   labelPreview(p);                      // el idioma puede haber cambiado
 }
 
-const dRows = new Map();
-/* Cada documento/grabación es UNA sola CARTA autocontenida: en su cabecera la
-   flecha de despliegue, el nombre REAL y el tamaño; y DENTRO del acordeón TODO
-   lo demás — descargar .md, descargar .txt, descargar el audio (.wav),
-   renombrar, eliminar (con confirmación de dos pasos) y cerrar —, la
-   transcripción COMPLETA y el reproductor del audio. Pulsar el nombre ya NO
-   abre una carta aparte: despliega esta misma. */
-function makeDocRow() {
-  const el = document.createElement("div");
-  el.className = "d-item";
+const mRows = new Map();
 
-  const row = document.createElement("div");
-  row.className = "d-row";
+/* ==========================================================================
+   AUDIOS Y DOCUMENTOS: una SOLA tarjeta, rehecha desde cero
+   --------------------------------------------------------------------------
+   Una reunión grabada, un audio subido ya transcrito y uno recién subido
+   mientras transcribe usan EL MISMO componente (.d-item .m-item), con un ORDEN
+   FIJO y sin posicionamiento absoluto ni alturas fijas:
 
-  const chev = document.createElement("button");
-  chev.type = "button"; chev.className = "btn btn-ghost btn-icon btn-sm d-chev";
-  chev.dataset.icon = "chevron-right"; chev.dataset.size = "14";
-  chev.setAttribute("aria-expanded", "false");
+     1. cabecera    icono + nombre real + peso · duración + acciones
+                    (renombrar y quitar/eliminar en DOS PASOS);
+     2. reproductor onda REAL (/peaks) con su duración, alineado al raíl;
+     3. debajo      la transcripción completa (con su propio scroll interno) o,
+                    si aún no está, el estado con su barra de progreso;
+     4. descargas   .md / .txt / .wav, visibles y funcionales cuando EXISTEN.
 
-  const name = document.createElement("button");
-  name.type = "button"; name.className = "d-name";
+   Nada se superpone: cabecera, reproductor, transcripción y descargas son
+   bloques APILADOS en columna dentro de la misma tarjeta.
+   ========================================================================== */
 
-  const meta = document.createElement("span");
-  meta.className = "d-meta";
+/* Lista ÚNICA: cada cosa del autor aparece una sola vez. Un documento ya
+   transcrito (subida terminada o reunión grabada) se pinta con su tarjeta; una
+   subida que AÚN no tiene documento se pinta con la MISMA tarjeta, en curso. En
+   cuanto la subida tiene transcripción, su tarjeta pasa a ser la del documento:
+   nunca se ven las dos a la vez ni se solapan. */
+function mediaItems() {
+  const qa = queueAudioMap();
+  const docs = (state.docs || []).slice()
+    .sort((a, b) => (Number(b.mtime) || 0) - (Number(a.mtime) || 0));
+  const have = new Set();
+  const items = [];
 
-  row.append(chev, name, meta);
-
-  /* cuerpo desplegable: la barra de acciones, el reproductor y la transcripción */
-  const body = document.createElement("div");
-  body.className = "d-body"; body.hidden = true;
-
-  const tools = document.createElement("div");
-  tools.className = "d-tools";
-
-  /* descargas con el FORMATO a la vista (.md / .txt / .wav) */
-  const mkFmt = (icon, txt) => {
-    const b = document.createElement("button");
-    b.type = "button"; b.className = "btn btn-soft btn-fmt";
-    const i = document.createElement("span");
-    i.dataset.icon = icon; i.dataset.size = "13";
-    const f = document.createElement("span");
-    f.className = "fmt"; f.textContent = txt;
-    b.append(i, f);
-    return b;
+  const withExt = n => {
+    const s = String(n || "");
+    if (!s) return "";
+    return /\.[^.]+$/.test(s) ? s : s + ".md";
   };
-  const dlMd = mkFmt("file-text", ".md");
-  const dlTxt = mkFmt("file-text", ".txt");
-  const dlWav = mkFmt("file-audio", ".wav");
 
+  docs.forEach(d => {
+    const stem = docStem(d.name);
+    if (stem) have.add(stem);
+    const own = baseName(d.audio);                 // .wav de la reunión, si lo hay
+    items.push({
+      kind: "doc", key: "doc:" + d.name, stem,
+      name: d.name, size: Number(d.size) || 0,
+      duration: Number(d.duration) || 0,
+      play: own || qa.get(stem) || "",
+      hasWav: !!own, doc: withExt(d.name), transcribe: true
+    });
+  });
+
+  /* Subidas en curso (todavía sin documento) van ARRIBA. */
+  const pend = [];
+  uploadItems().forEach(u => {
+    const stem = docStem(u.doc || u.name);
+    if (stem && have.has(stem)) return;            // ya la representa su tarjeta
+    pend.push({
+      kind: "upload", key: "up:" + u.name, stem,
+      name: u.name, size: Number(u.size) || 0,
+      duration: Number(u.duration) || 0,
+      play: u.play || qa.get(docStem(u.name)) || "",
+      hasWav: false,
+      doc: u.doc ? withExt(u.doc) : "",            // documento cuando exista
+      transcribe: !!u.doc,
+      state: String(u.state || "pendiente"),
+      progress: Number(u.progress) || 0
+    });
+  });
+  return pend.concat(items);
+}
+
+/* Construye UNA tarjeta vacía; su contenido lo pone paintMediaCard en cada
+   repintado (el sondeo de /state). Todo es flujo normal: ningún hijo se saca
+   del flujo con position:absolute ni con alturas fijas. */
+function makeMediaCard() {
+  const el = document.createElement("div");
+  el.className = "d-item m-item";
+
+  /* (1) cabecera: icono + nombre real + peso/duración + acciones */
+  const head = document.createElement("div");
+  head.className = "m-head";
+  const tile = document.createElement("span");
+  tile.className = "tile accent m-tile";
+  tile.dataset.icon = "file-audio"; tile.dataset.size = "16";
+  const txt = document.createElement("span");
+  txt.className = "m-txt";
+  const name = document.createElement("span");
+  name.className = "m-name";
+  const meta = document.createElement("span");
+  meta.className = "m-meta";
+  txt.append(name, meta);
+  const acts = document.createElement("span");
+  acts.className = "m-acts";
   const ren = document.createElement("button");
   ren.type = "button"; ren.className = "btn btn-soft btn-icon btn-sm";
   ren.dataset.icon = "pencil"; ren.dataset.size = "13";
-
   const del = document.createElement("button");
   del.type = "button"; del.className = "btn btn-danger btn-icon btn-sm";
   del.dataset.icon = "trash"; del.dataset.size = "13";
+  acts.append(ren, del);
+  head.append(tile, txt, acts);
 
-  const close = document.createElement("button");
-  close.type = "button"; close.className = "btn btn-ghost btn-icon btn-sm";
-  close.dataset.icon = "x"; close.dataset.size = "13";
-
-  const spacer = document.createElement("span");
-  spacer.className = "spacer";
-
-  tools.append(dlMd, dlTxt, dlWav, ren, spacer, del, close);
-
+  /* (2) reproductor: onda real (/peaks) + su duración */
   const pvSlot = document.createElement("div");
-  pvSlot.className = "d-pv";
+  pvSlot.className = "m-pv";
+
+  /* (3) estado + progreso (mientras transcribe) o transcripción completa */
+  const stateRow = document.createElement("div");
+  stateRow.className = "m-state"; stateRow.hidden = true;
+  const tag = document.createElement("span");
+  tag.className = "tag m-tag";
+  const progWrap = document.createElement("span");
+  progWrap.className = "m-prog"; progWrap.hidden = true;
+  const bar = document.createElement("span");
+  bar.className = "q-bar";
+  const fill = document.createElement("i");
+  bar.append(fill);
+  progWrap.append(bar);
+  stateRow.append(tag, progWrap);
+
   const transcript = document.createElement("div");
-  transcript.className = "d-transcript";
+  transcript.className = "m-transcript";
   transcript.setAttribute("role", "region");
   transcript.tabIndex = 0;
-  body.append(tools, pvSlot, transcript);
-  el.append(row, body);
 
-  const r = { el, chev, name, meta, dlMd, dlTxt, dlWav, ren, del, close,
-              body, pvSlot, transcript,
-              pv: null, expanded: false, loaded: false, prev: {},
-              dispose() {
-    if (r.pv) { disposePreview(r.pv); r.pv = null; }
-  } };
+  /* (4) descargas: solo cuando existen (iconos distintos) */
+  const tools = document.createElement("div");
+  tools.className = "m-tools";
+  const mkFmt = (icon, label, kind) => {
+    const b = document.createElement("button");
+    b.type = "button"; b.className = "btn btn-soft btn-fmt";
+    b.dataset.kind = kind;
+    const i = document.createElement("span");
+    i.dataset.icon = icon; i.dataset.size = "13";
+    const f = document.createElement("span");
+    f.className = "fmt"; f.textContent = label;
+    b.append(i, f);
+    return b;
+  };
+  const dlMd = mkFmt("file-text", ".md", "md");
+  const dlTxt = mkFmt("download", ".txt", "txt");
+  const dlWav = mkFmt("file-audio", ".wav", "wav");
+  tools.append(dlMd, dlTxt, dlWav);
 
-  /* El nombre despliega la MISMA carta (antes abría una vista duplicada). */
-  chev.addEventListener("click", () => toggleDoc(r));
-  name.addEventListener("click", () => toggleDoc(r));
-  /* Descargas: una navegación real a /download (Content-Disposition:
-     attachment), nunca AJAX ni una pestaña nueva. */
-  dlMd.addEventListener("click", () => name.dataset.name && downloadDoc(name.dataset.name, "md"));
-  dlTxt.addEventListener("click", () => name.dataset.name && downloadDoc(name.dataset.name, "txt"));
-  dlWav.addEventListener("click", () => name.dataset.name && downloadDoc(name.dataset.name, "wav"));
-  ren.addEventListener("click", () => name.dataset.name && beginRename(r, name.dataset.name));
-  /* Eliminar: confirmación de DOS PASOS (el patrón del panel): el mismo botón
-     pasa a «¿Eliminar?» con relleno rojo y solo el segundo clic borra. */
-  del.addEventListener("click", () => {
+  el.append(head, pvSlot, stateRow, transcript, tools);
+
+  const r = { el, tile, name, meta, ren, del, pvSlot, pv: null,
+              stateRow, tag, progWrap, fill, transcript, tools, dlMd, dlTxt, dlWav,
+              doc: "", base: "", transcribe: false, loaded: false,
+              remove: null, delIdle: "ui.remove", delOn: "ui.confirmRemove",
+              prev: {},
+              dispose() { if (r.pv) { disposePreview(r.pv); r.pv = null; } } };
+
+  /* renombrar (lápiz): solo cuando hay documento/transcripción */
+  ren.addEventListener("click", () => { if (r.doc) beginRename(r, r.doc); });
+
+  /* quitar (subida en curso) / eliminar (documento): DOS PASOS, el mismo botón
+     pasa a la pregunta en rojo y solo el segundo clic llama al backend. */
+  del.addEventListener("click", async () => {
+    if (!r.remove) return;
     if (del.dataset.confirm) {
       delete del.dataset.confirm;
-      confirmState(del, false, "ui.docDelete", "ui.confirmDelete");
-      deleteDoc(del.dataset.doc);
+      confirmState(del, false, r.delIdle, r.delOn);
+      const rm = r.remove;
+      if (rm.action === "doc.delete") { deleteDoc(rm.value); return; }
+      await send(rm.action, rm.value);
+      merge(await getState());
+      paint();
       return;
     }
     del.dataset.confirm = "1";
-    confirmState(del, true, "ui.docDelete", "ui.confirmDelete");
+    confirmState(del, true, r.delIdle, r.delOn);
     setTimeout(() => {
-      if (del.dataset.confirm) {
-        delete del.dataset.confirm;
-        confirmState(del, false, "ui.docDelete", "ui.confirmDelete");
-      }
+      if (!del.dataset.confirm || !del.isConnected) return;
+      delete del.dataset.confirm;
+      confirmState(del, false, r.delIdle, r.delOn);
     }, 2600);
   });
-  close.addEventListener("click", () => { if (r.expanded) toggleDoc(r); });
 
-  paintIcons(el);                       // los iconos de la carta, una vez
+  /* descargas: navegación real a /download (Content-Disposition: attachment) */
+  [dlMd, dlTxt, dlWav].forEach(b => b.addEventListener("click", () => {
+    if (r.base) downloadDoc(r.base, b.dataset.kind);
+  }));
+
+  paintIcons(el);                       // los iconos de la tarjeta, una vez
   return r;
+}
+
+/* Carga el texto ENTERO de la transcripción una sola vez por tarjeta (endpoint
+   /doc). Se prueba el nombre tal cual y sin extensión porque según de dónde
+   venga el documento llega con .md o sin ella. */
+async function loadTranscript(r, doc) {
+  for (const nm of [doc, doc.replace(/\.[^.]+$/, "")]) {
+    if (!nm) continue;
+    try {
+      const res = await fetch("/doc?doc=" + encodeURIComponent(nm), { cache: "no-store" });
+      if (!res.ok) continue;
+      const txt = (await res.text()) || "";
+      if (r.el.isConnected && r.doc === doc) r.transcript.textContent = txt;
+      return;
+    } catch (_) { /* se prueba el siguiente */ }
+  }
+}
+
+function paintMediaCard(r, it) {
+  /* --- cabecera: icono, nombre real y peso · duración --- */
+  const key = it.key + "|" + (it.doc || "");
+  if (r.prev.key !== key) {
+    r.prev.key = key;
+    r.doc = it.doc || "";
+    r.base = it.doc ? docStem(it.doc) : "";
+    r.transcribe = !!it.transcribe;
+    r.loaded = false; r.transcript.textContent = "";
+    r.remove = it.transcribe
+      ? { action: "doc.delete", value: it.doc }
+      : { action: "upload.remove", value: it.name };
+    r.delIdle = it.transcribe ? "ui.docDelete" : "ui.remove";
+    r.delOn = it.transcribe ? "ui.confirmDelete" : "ui.confirmRemove";
+  }
+  if (r.prev.name !== it.name) {
+    r.name.textContent = it.name;
+    r.name.title = it.name;
+    r.prev.name = it.name;
+  }
+  const ext = (String(it.name).split(".").pop() || "").toLowerCase();
+  const video = /^(mp4|mkv|mov|avi|webm|m4v|wmv)$/.test(ext);
+  const kind = video ? "monitor" : (it.play || it.transcribe ? "file-audio" : "file-text");
+  if (r.prev.kind !== kind) { setIcon(r.tile, kind, 16); r.prev.kind = kind; }
+
+  const bits = [];
+  if (it.size) bits.push(fmtSize(it.size));
+  if (it.duration) bits.push(fmtTime(it.duration, true));
+  const meta = bits.join("  ·  ");
+  if (r.prev.meta !== meta) { r.meta.textContent = meta; r.meta.hidden = !meta; r.prev.meta = meta; }
+
+  /* --- (2) reproductor: onda real (/peaks) --- */
+  const play = it.play || "";
+  if (r.prev.play !== play) {
+    r.prev.play = play;
+    if (r.pv) { disposePreview(r.pv); r.pv = null; }
+    if (play) { r.pv = makePreview(play); r.pvSlot.append(r.pv.el); }
+  }
+  if (r.pv) labelPreview(r.pv);                 // el idioma puede haber cambiado
+
+  /* --- (3) transcripción completa DEBAJO, o el estado con su barra --- */
+  if (r.transcribe) {
+    r.stateRow.hidden = true;
+    r.transcript.hidden = false;
+    if (!r.loaded && r.doc) { r.loaded = true; loadTranscript(r, r.doc); }
+  } else {
+    r.transcript.hidden = true;
+    r.stateRow.hidden = false;
+    const st = UPLOAD_STATE[it.state] || UPLOAD_STATE.pendiente;
+    const lk = it.state + "|" + uiLocale();
+    if (r.prev.st !== lk) {
+      r.tag.className = "tag m-tag " + st.cls;
+      r.tag.textContent = t(st.key);
+      r.prev.st = lk;
+    }
+    const prog = it.state === "transcribiendo"
+      ? Math.max(0, Math.min(100, it.progress || 0)) : -1;
+    if (r.prev.prog !== prog) {
+      r.progWrap.hidden = prog < 0;
+      if (prog >= 0) r.fill.style.width = prog + "%";
+      r.prev.prog = prog;
+    }
+  }
+
+  /* --- (4) descargas: solo las que existen DE VERDAD --- */
+  const showMd = r.transcribe && !!r.base;
+  const showTxt = r.transcribe && !!r.base;
+  const showWav = r.transcribe && !!it.hasWav;
+  const dk = showMd + "" + showTxt + showWav;
+  if (r.prev.dk !== dk) {
+    r.dlMd.hidden = !showMd;
+    r.dlTxt.hidden = !showTxt;
+    r.dlWav.hidden = !showWav;
+    r.tools.hidden = !(showMd || showTxt || showWav);
+    r.prev.dk = dk;
+  }
+  r.ren.hidden = !r.transcribe || !r.doc;
+
+  /* --- etiquetas (texto, aria-label y title) al idioma actual --- */
+  if (r.prev.lab !== uiLocale()) {
+    r.dlMd.setAttribute("aria-label", t("ui.dlDocMd")); r.dlMd.title = t("ui.dlDocMd");
+    r.dlTxt.setAttribute("aria-label", t("ui.dlDocTxt")); r.dlTxt.title = t("ui.dlDocTxt");
+    r.dlWav.setAttribute("aria-label", t("ui.dlAudio")); r.dlWav.title = t("ui.dlAudio");
+    r.ren.setAttribute("aria-label", t("ui.docRename")); r.ren.title = t("ui.docRename");
+    r.transcript.setAttribute("aria-label", t("ui.docTranscript"));
+    r.prev.lab = uiLocale();
+  }
+  confirmState(r.del, !!r.del.dataset.confirm, r.delIdle, r.delOn);
+}
+
+/* Pinta UNA SOLA lista, reconciliando en sitio (conserva reproductores, foco y
+   selección). Cada tarjeta se crea una vez y se reutiliza. */
+function paintMedia() {
+  const box = $("#media");
+  if (!box) return;
+  const items = mediaItems();
+  const seen = new Set();
+  items.forEach((it, i) => {
+    let r = mRows.get(it.key);
+    if (!r) { r = makeMediaCard(); mRows.set(it.key, r); }
+    if (box.children[i] !== r.el) box.insertBefore(r.el, box.children[i] || null);
+    paintMediaCard(r, it);
+    seen.add(it.key);
+  });
+  mRows.forEach((r, key) => {
+    if (seen.has(key)) return;
+    if (r.dispose) r.dispose();
+    r.el.remove();
+    mRows.delete(key);
+  });
+  const empty = $("#mediaEmpty");
+  if (empty) empty.hidden = items.length > 0;
+  const cnt = $("#mediaCount");
+  if (cnt) { cnt.hidden = items.length === 0; cnt.textContent = String(items.length); }
 }
 
 /* Descarga REAL: navega a la URL de descarga; el servidor responde con
@@ -2466,29 +2470,6 @@ function downloadURL(url) {
 function downloadDoc(filename, kind) {
   const base = String(filename).replace(/\.[^.]+$/, "");
   downloadURL(`/download?doc=${encodeURIComponent(base)}&kind=${encodeURIComponent(kind)}`);
-}
-
-/* Desplegar/plegar la carta: la flecha gira (chevron-right -> down) y el cuerpo
-   enseña el reproductor del audio y la transcripcion COMPLETA del documento. */
-function toggleDoc(r) {
-  const open = !r.expanded;
-  r.expanded = open;
-  r.el.classList.toggle("open", open);
-  r.body.hidden = !open;
-  r.chev.setAttribute("aria-expanded", String(open));
-  if (open && !r.loaded) { r.loaded = true; fillDocBody(r); }
-}
-
-/* Carga el texto ENTERO del documento en la propia tarjeta: el mismo endpoint
-   /doc que usa la vista de documento completo, pero sin recortar. */
-async function fillDocBody(r) {
-  const nm = r.name.dataset.name;
-  if (!nm) return;
-  try {
-    const res = await fetch(`/doc?doc=${encodeURIComponent(nm)}`, { cache: "no-store" });
-    const txt = (await res.text()) || "";
-    r.transcript.textContent = txt;
-  } catch (_) { r.transcript.textContent = ""; }
 }
 
 function showRenameError(r, msg) {
@@ -2567,98 +2548,14 @@ async function renameDoc(oldName, newBase, r) {
   }
 }
 
-function paintDocRow(r, d) {
-  if (r.prev.lab !== uiLocale()) {
-    r.dlMd.setAttribute("aria-label", t("ui.dlDocMd")); r.dlMd.title = t("ui.dlDocMd");
-    r.dlTxt.setAttribute("aria-label", t("ui.dlDocTxt")); r.dlTxt.title = t("ui.dlDocTxt");
-    r.dlWav.setAttribute("aria-label", t("ui.dlAudio")); r.dlWav.title = t("ui.dlAudio");
-    r.ren.setAttribute("aria-label", t("ui.docRename")); r.ren.title = t("ui.docRename");
-    r.close.setAttribute("aria-label", t("ui.docClose")); r.close.title = t("ui.docClose");
-    r.chev.setAttribute("aria-label", t("ui.docExpand")); r.chev.title = t("ui.docExpand");
-    r.transcript.setAttribute("aria-label", t("ui.docTranscript"));
-    if (r.name.dataset.name) r.name.title = r.name.dataset.name;
-    r.prev.lab = uiLocale();
-  }
-  /* El borrar de la fila lleva aquí su nombre y su estado de confirmación: su
-     etiqueta cambia en caliente, así que no la pinta paintI18n. */
-  confirmState(r.del, !!r.del.dataset.confirm, "ui.docDelete", "ui.confirmDelete");
-  if (r.prev.name !== d.name && !r.el.querySelector(".d-rename-wrap")) {
-    r.name.textContent = d.name;                         /* el nombre REAL */
-    r.name.title = d.name;
-    r.name.dataset.name = d.name;
-    r.del.dataset.doc = d.name;
-    r.prev.name = d.name;
-    r.loaded = false; r.transcript.textContent = "";
-  }
-  const kb = `${Math.max(1, Math.round((d.size || 0) / 1024))} KB`;
-  if (r.prev.kb !== kb) { r.meta.textContent = kb; r.prev.kb = kb; }
-  /* El audio de la tarjeta, en este orden: el .wav de la reunión (que hereda el
-     nombre del documento) o, si es un fichero subido, el audio del autor tal
-     como lo guarda la cola en audios/ (nombre interno). La descarga .wav solo
-     existe en el primer caso: /download sirve audios/<documento>.wav. */
-  const own = baseName(d.audio);
-  const audio = own || queueAudioMap().get(docStem(d.name)) || "";
-  if (r.prev.audio !== audio || r.prev.wav !== own) {
-    r.dlWav.hidden = !own;
-    r.prev.audio = audio; r.prev.wav = own;
-    if (r.pv) { disposePreview(r.pv); r.pv = null; }
-    if (audio) { r.pv = makePreview(audio); r.pvSlot.appendChild(r.pv.el); }
-  }
-}
-
-/* ---- audios y documentos: UNA SOLA lista ---- */
-/* Cada cosa que el autor añade o graba vive en el MISMO sitio y con la MISMA
-   tarjeta (.d-item): los ficheros subidos aún sin transcripción (en espera,
-   transcribiendo o con error) y los documentos ya transcritos (subidas
-   terminadas y grabaciones de reunión). En cuanto una subida tiene su
-   transcripción, su ficha de subida DESAPARECE: la sustituye la tarjeta del
-   documento, con su audio (onda real), la transcripción COMPLETA y todas las
-   acciones (descargar .md/.txt/.wav, renombrar, eliminar en dos pasos). Así
-   nada se ve dos veces y todo se lee como una sola parte. */
+/* ---- audios y documentos: UNA SOLA lista ----
+   La lista, las tarjetas y su reconciliación viven arriba (mediaItems /
+   makeMediaCard / paintMediaCard / paintMedia). Aquí queda solo la clave que
+   enlaza una subida con su documento ya transcrito. */
 
 /* Nombre base sin extensión: «X.md» y la grabación «X» caen en la misma clave,
    que es lo que enlaza una subida con su documento ya transcrito. */
 function docStem(n) { return baseName(n).replace(/\.[^.]+$/, ""); }
-
-function paintMedia() {
-  const box = $("#media");
-  if (!box) return;
-  const docs = (state.docs || []).slice().sort((a, b) => b.mtime - a.mtime);
-  const have = new Set(docs.map(d => docStem(d.name)));
-  /* Subidas cuyo documento YA está en la lista: no se pintan (su tarjeta de
-     documento las representa). El resto son las que van sueltas, en curso. */
-  const pend = uploadItems().filter(u => {
-    return ![u.doc, u.name].map(docStem).some(k => k && have.has(k));
-  });
-
-  const plan = [];
-  pend.forEach(u => plan.push({ cache: uRows, key: u.name, make: makeUploadRow,
-                                paint: paintUploadRow, data: u, isDoc: false }));
-  docs.forEach(d => plan.push({ cache: dRows, key: d.name, make: makeDocRow,
-                                paint: paintDocRow, data: d, isDoc: true }));
-
-  const seenU = new Set(), seenD = new Set();
-  plan.forEach((p, i) => {
-    let row = p.cache.get(p.key);
-    if (!row) { row = p.make(); p.cache.set(p.key, row); }
-    if (box.children[i] !== row.el) box.insertBefore(row.el, box.children[i] || null);
-    p.paint(row, p.data);
-    (p.isDoc ? seenD : seenU).add(p.key);
-  });
-  const prune = (cache, seen) => cache.forEach((row, key) => {
-    if (seen.has(key)) return;
-    if (row.dispose) row.dispose();
-    row.el.remove();
-    cache.delete(key);
-  });
-  prune(uRows, seenU);
-  prune(dRows, seenD);
-
-  const empty = $("#mediaEmpty");
-  if (empty) empty.hidden = plan.length > 0;
-  const cnt = $("#mediaCount");
-  if (cnt) { cnt.hidden = plan.length === 0; cnt.textContent = String(plan.length); }
-}
 
 async function deleteDoc(name) {
   try {
@@ -2672,23 +2569,24 @@ async function deleteDoc(name) {
   paint();
 }
 
-/* Lleva a la TARJETA del documento (nunca a una copia): abre Documentos,
-   despliega esa misma carta y la trae a la vista. Lo usan los flujos que antes
-   abrían el editor duplicado (abrir el documento desde un fichero subido o
-   desde la reunión recién guardada).
-   El `doc` llega unas veces como nombre base («Prueba_1») y otras con la
-   extensión («Prueba_1.md», o la ruta entera de la cola), así que se prueba la
-   clave exacta, su .md y su versión sin extensión + .md. */
+/* Trae a la vista la TARJETA de ese documento (nunca una copia): abre la
+   sección única de audios y documentos y la desplaza hasta ella. La usan los
+   flujos que antes abrían un editor duplicado (abrir el documento desde un
+   fichero subido o desde la reunión recién guardada).
+   El `doc` llega unas veces como nombre base («Prueba_1»), otras con extensión
+   («Prueba_1.md», o la ruta entera de la cola), así que se compara por RAÍZ de
+   nombre (la misma clave que enlaza una subida con su documento). */
 async function focusDocCard(name) {
   if (!name) return;
-  const want = baseName(name);
-  const stem = want.replace(/\.[^.]+$/, "");
+  const stem = docStem(baseName(name));
   showSection("audios");                 /* la sección única: audios y documentos */
-  const find = () => dRows.get(want) || dRows.get(stem) || dRows.get(stem + ".md");
+  const find = () => {
+    for (const r of mRows.values()) if (r.base === stem) return r;
+    return null;
+  };
   let r = find();
   if (!r) { merge(await getState()); paint(); r = find(); }
   if (!r) return;
-  if (!r.expanded) toggleDoc(r);
   r.el.scrollIntoView({ behavior: "smooth", block: "nearest" });
 }
 

@@ -2645,3 +2645,213 @@ limpia (`.tmp/clean103/`) y arrancado con el **entorno saneado** (`PYTHONPATH` y
 `CHANGELOG.md`, `dicta.spec`, `build_exe.bat`, el cierre limpio
 (`shutdown_service`), la instancia única, los atajos ni el pegado por destino.
 Solo cambian `dicta.py` (la constante `VERSION`) y este `CHANGES.md`.
+
+## 58. La actualización desde la app YA SE APLICA: el ayudante sobrevive, sustituye el paquete completo y relanza la app
+
+**Qué pedía el autor.** «Cuando le doy actualizar, descarga y me cierra el
+aplicativo pero no vuelve y se abre, y tampoco al volverlo a abrir se actualiza:
+la actualización no está funcionando realmente.» Descargar y verificar ya iban
+bien; lo que fallaba era **aplicar**.
+
+**Los fallos, medidos (no supuestos).** El ayudante `.cmd` que espera al cierre,
+sustituye los ficheros y relanza la app nunca llegaba a hacer su trabajo:
+
+1. **Heredaba los descriptores de la app y se colgaba.** Un ayudante de prueba
+   (misma plantilla, lanzado con `DETACHED_PROCESS`) seguía VIVO minutos después
+   del cierre de su padre, atascado en la orden con tubería
+   `tasklist | findstr`: con el `stdout` heredado ya roto, esa orden no termina
+   nunca. Con los tres flujos a NULO y **sin tuberías** (todo por fichero) el
+   mismo ayudante llegó hasta el final.
+2. **`DETACHED_PROCESS` deja al ayudante SIN CONSOLA y `tasklist` escribe en el
+   VACÍO:** medido, **0 bytes con código 0**. Se probaron 4 variantes de flags:
+   `DETACHED` → 0 B; `CREATE_NO_WINDOW`, `CREATE_NEW_CONSOLE` y sin flag → 89 B
+   (la línea «no hay tareas…»). `netstat` y `powershell` se comportan igual que
+   `tasklist`; solo los comandos internos (`ver`) contestan. Consecuencia
+   exacta: la espera por PID daba «la app ya cerró» **en el acto**, robocopy
+   copiaba **con la app aún viva** (su `.exe` no se puede sustituir) y relanzaba
+   mientras la instancia vieja tenía el candado puesto → la nueva salía con
+   «dicta ya estaba abierto» y se cerraba. Eso es literalmente «se cierra, no se
+   sustituye nada y no vuelve a abrirse».
+3. **`findstr /C:,"15000",` NO casa nunca** contra una línea que contiene
+   `,"15000",` (devuelve **1**): la espera habría saltado siempre aunque hubiera
+   consola. Ahora la comprobación lee la **2ª columna** del `tasklist /FO CSV`
+   con `for /f "usebackq tokens=2 delims=,"`.
+4. **`set "ALIVE="` estaba FUERA del bucle:** en cuanto se veía vivo una vez, ya
+   no se reiniciaba y el ayudante esperaba de más y no aplicaba nada. Medido:
+   `ERROR: la app (pid 20972) sigue viva tras 90 s` con el proceso ya muerto.
+
+**Cambios (`dicta.py`).**
+
+- **`_spawn_helper()`**: lanza el ayudante DESACOPLADO —
+  `CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP` (+ `CREATE_BREAKAWAY_FROM_JOB`
+  con respaldo, porque si el job no lo permite da `WinError 5`) y
+  `stdin/stdout/stderr` a NULO. Registra el PID y los flags. **Ya no se usa
+  `DETACHED_PROCESS`.**
+- **`_helper_script()` / `_write_helper()` / `_oem_encoding()`**: el `.bat`
+  ayudante se genera aparte y deja **registro por pasos en `update.log`, junto a
+  la app** (inicio, paquete, destino, cierre de la app, cada intento de copia con
+  su código de robocopy, relanzado, fin, o el error exacto). Espera por PID
+  **con tope** (90 s) y, si la app no cierra, lo dice y **no toca nada**.
+- **Copia**: `robocopy /E` (paquete COMPLETO y recursivo, no solo el `.exe`) con
+  `/R:3 /W:2` **y hasta 5 rondas**, y `/XF dicta_config.json update.log dicta.log
+  dicta_crash.log`. `/E` sin `/PURGE` sobreescribe lo que trae el paquete pero
+  **no borra nada más**: la configuración y los datos del usuario sobreviven, y
+  el paquete no puede pisar el config ni los registros.
+- **Relanzado**: `start "" "%EXE%"` apuntando al ejecutable en su ruta; en modo
+  fuente, `pythonw` con este script. Limpieza del temporal al terminar.
+- **El `.bat` se escribe en la codepage OEM** (`_oem_encoding` → `cp850` aquí):
+  antes iba en `ascii`, así que una ruta de usuario con acentos reventaba.
+- **Modo fuente**: antes se quedaba en «descargado (modo fuente)» y **no aplicaba
+  nunca**; ahora también aplica. El camino del portable del autor no cambia.
+
+**Demostración de punta a punta (banco de pruebas, SIN publicar nada).** Copia de
+la app en `.tmp/uptest/bench/install` (VERSION **1.0.3**, puertos
+57123/57801/57810 para no chocar con la instancia del autor) + servidor local
+que imita `releases/latest` + paquete «nuevo» **real** (ZIP con VERSION **1.0.4**,
+testigos y un `dicta_config.json` DECOY):
+
+- `POST check_update` → **200**, `available=true`, `latest=1.0.4`,
+  `asset_size=81269`, `asset_sha256=8008cbf8d33ba019…`.
+- `POST update` → **202** y log de la app: descarga (el servidor registra
+  `GET /dicta-portable-1.0.4-windows-x64.zip -> 200 (81269 B)`),
+  `sha256 verificado (8008cbf8d33ba019...)`,
+  `ayudante lanzado desacoplado (pid 17940, flags 0x09000200)`.
+- **Registro del ayudante**: iniciado → «la app cerró (tras 3 s)» →
+  `copia intento 1: robocopy rc=3` → «paquete sustituido; relanzando la app» →
+  «app relanzada» → terminado.
+- La app **VIEJA (pid 9768) desaparece** y la **NUEVA (pid 22336)** responde sola
+  en el mismo puerto con **`version: "1.0.4"`** y
+  **`update.testigo: "paquete-nuevo-1.0.4"`** — el testigo viaja en el código, así
+  que el proceso que contesta ES el nuevo, no solo un fichero cambiado.
+- **Testigos en disco**: `testigo_nuevo.txt` («PAQUETE NUEVO 1.0.4 OK»),
+  `subcarpeta/anidado/testigo_anidado.txt` (prueba de `/E` recursivo) y
+  `panel/index.html` con `<!-- TESTIGO PANEL 1.0.4 -->` (contenido no ejecutable).
+- **Datos del usuario intactos**: `hotkey=ctrl+alt+k` y `silence_wait=42` (el
+  DECOY del paquete **no** se aplicó), `audios/` (2 ficheros),
+  `textos/documento_usuario.md`, `uploads/`, `models/ggml-tiny-q5_1.bin` y
+  `testigo_viejo.txt` (robocopy no purga).
+- **Reintentos con un fichero EN USO** (el caso del `.exe` bloqueado en el
+  portable): con `panel/index.html` bloqueado en exclusiva 12 s, el registro
+  enseña `copia intento 1: robocopy rc=11` con cuatro `ERROR 32 … utilizado por
+  otro proceso` y `copia intento 2: robocopy rc=3` → sustituido igualmente.
+
+**Límite honesto.** El ciclo completo se demostró con la app corriendo **desde el
+código** (modo fuente), que es donde el banco puede cambiar de versión y volver a
+contestar `/state`. En el portable del autor el único tramo distinto es la orden
+de relanzado: el ayudante generado en modo portable (volcado en la verificación)
+apunta a `start "" "%EXE%"` con `%EXE% = …\dicta.exe` y `DST` = la carpeta del
+ejecutable. La sustitución de un `.exe` en uso queda cubierta por los reintentos
+medidos arriba.
+
+**No se tocó:** `panel/*`, `dicta_ui.py`, `dicta_icon.py`, el cierre limpio
+(`shutdown_service` sigue liberando la VRAM; el quit sigue pasando por él), la
+instancia única, los atajos, `/state` (las claves de siempre siguen; solo se
+**añaden** `update.update_log` y `update.helper_pid`), `/panel/icon.png`,
+`/download`, `doc.rename`/`delete`, `upload.remove`, `MicTest`, la clase de
+reunión, el pegado por destino ni la comprobación de versión (sigue activada por
+defecto y sin enviar datos del usuario).
+
+**Aviso.** La app quedó **viva** (`GET /state` **200**) con el código anterior al
+cambio cargado (solo cambia el camino de actualización, que se ejecuta al pulsar
+«Actualizar»). Restos de la prueba: `.tmp/uptest/` (banco, paquete y registros).
+No se publicó ninguna release ni se hizo push.
+
+## 59. Reempaquetado portable 1.0.4: el arreglo del ACTUALIZADOR, el dialogo de actualizacion con scroll y las cartas de audio/documento rehechas van DENTRO del `.exe` (verificado de punta a punta)
+
+Esta entrada NO cambia comportamiento nuevo: empaqueta en el `.exe` portable lo
+ya medido en la entrada 58 y lo deja verificado de punta a punta. **El unico
+cambio en el codigo es la version**: `VERSION` pasa de **"1.0.3"** a **"1.0.4"**
+en `dicta.py` (linea 229), que es el unico sitio donde se versiona la app.
+
+**Que viaja dentro del `.exe` 1.0.4** (sin cambios de codigo respecto a la
+58):
+
+- El **arreglo del actualizador**: el ayudante se lanza **desacoplado**
+  (`CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP`, con intento de
+  `CREATE_BREAKAWAY_FROM_JOB`), **espera a que la app cierre por PID con tope**
+  de 90 s, sustituye el paquete con **robocopy `/E`** con reintentos
+  (`/R:3 /W:2`) y exclusiones (`/XF dicta_config.json update.log dicta.log
+  dicta_crash.log`), deja **registro por pasos** en `update.log` y **relanza la
+  app** en la ruta nueva.
+- El **dialogo de actualizacion** con **scroll en el cuerpo** y **botones
+  siempre visibles** (no se empujan fuera de la ventana).
+- Las **cartas de audio/documento rehechas**: cabecera -> reproductor con
+  **onda real** -> **transcripcion debajo con scroll** -> descargas `.md` /
+  `.txt` / `.wav`.
+
+**Receta de build (medida, sin cambios).** `dicta.spec` con PyInstaller onedir,
+`console=False` y **`uac_admin=False`** (asInvoker: no pide UAC); `dicta.exe.config`
+(`loadFromRemoteSources`) viaja en la **RAIZ** de `dist/dicta` como tipo
+`EXECUTABLE` (lo lee .NET al lado del `.exe`); `models/ggml-small-q5_1.bin`
+**externo** junto al `.exe`. Se compilo con
+`.venv/Scripts/python.exe -m PyInstaller --noconfirm --clean dicta.spec`
+(rc=0). `dist/dicta` se regenero **limpio** (se borro entero antes): solo
+`dicta.exe`, `dicta.exe.config`, `_internal/` y `models/`, con **una sola**
+copia de `panel/` (dentro de `_internal/panel/`).
+
+**Paquete.** `dist/dicta-portable-1.0.4-windows-x64.zip` — **261.439.228 bytes**,
+`sha256 = d8baee382ca5a14bdee71f6f98cc06acf6a5a9c18fed9ebaf4279e0beb73101d`.
+`testzip` **OK**, 1077 entradas, raiz exactamente
+`dicta.exe + dicta.exe.config + _internal/ + models/`. Los ZIP 1.0/1.0.1/1.0.2/1.0.3
+**no se tocaron**.
+
+**Verificacion (a)-(g), hecha sobre el `.exe` congelado recien compilado:**
+
+- **(a) Arranque limpio.** ZIP descomprimido en una carpeta LIMPIA
+  (`.tmp/clean104`) y arrancado con **entorno saneado** (`PYTHONPATH` y
+  `VIRTUAL_ENV` quitados). `GET /state` -> **200** con **`version: "1.0.4"`**,
+  `model: "small"`, `engine_resolved: "vulkan"`. La ventana es **WebView2 real**
+  (puerto de depuracion CDP): **`Edg/155.0.4283.45`**, no el respaldo de Chrome.
+- **(b) Transcripcion REAL de punta a punta.** `POST /upload` (multipart) de un
+  wav de 10 s -> cola `listo` -> documento generado en
+  `textos/prueba_1_0_4.md` con transcripcion coherente:
+  «La reunion del equipo empieza a las 9 y 30 de la manana…» + seccion de temas.
+- **(c) Cierre limpio.** Con la app viva (`/state` 200) y `whisper-server.exe`
+  cargado: `POST {action:"quit"}` -> **`{"ok": true}`**; despues **`/state`
+  deja de responder** (conexion rechazada), **cero procesos** `dicta.exe` /
+  `whisper-server.exe` y **VRAM liberada**: 12.722,1 MB -> 12.097,9 MB
+  (~624 MB del modelo/motor devueltos a la GPU).
+- **(d) Pegado automatico desde el `.exe` congelado.** Carril de entrega del
+  propio ejecutable (`POST {action:"test"}`):
+  - **Consola en modo crudo** (lector `msvcrt.getwch` en su propia consola):
+    recibio **«prueba dicta 123»**; el log dice
+    `Pegado (buffer de consola) enviado a [console: ConsoleWindowClass]`.
+  - **Aplicacion normal** (ventana Win32 con EDIT nativo en primer plano):
+    recibio **«prueba dicta 123»**; el log dice
+    `Pegado (ctrl+v) enviado a [normal: DictaRecv104]`.
+- **(e) Integridad y contenido del ZIP.** `testzip` **OK**; contiene
+  `dicta.exe` (7.764.000 bytes), `dicta.exe.config` (1.192), `_internal/`
+  (1074 entradas) y `models/ggml-small-q5_1.bin` (190.085.487). **Ningun dato
+  del usuario**: ni `audios/`, ni `textos/`, ni `uploads/`, ni `.tmp/`, ni
+  `dicta.log`, ni `dicta_config.json`, ni `update.log`. El ZIP coincide
+  exactamente con `dist/dicta` (sin deriva) y su `dicta.exe` es **identico** al
+  de disco; el `dicta.exe.config` lleva `loadFromRemoteSources`.
+- **(f) El AYUDANTE generado en el paquete es el nuevo.** Volcado el ayudante
+  portable generado por `dicta.py` (frozen=True, 50 lineas): espera por PID con
+  tope (`if %W% GEQ 90 goto app_alive`), **robocopy `/E` … `/R:3 /W:2 /XF …`**,
+  **registro por pasos** (`iniciado`, `la app cerro`, `copia intento N:
+  robocopy rc=`, `paquete sustituido; relanzando…`, `app relanzada`, `ayudante
+  terminado`) y relanzado `start "" "%EXE%"` apuntando a `dicta.exe`. El lanzado
+  es **desacoplado**: medido en vivo con un ayudante inocuo,
+  `flags 0x09000200` (CREATE_NO_WINDOW | CREATE_BREAKAWAY_FROM_JOB |
+  CREATE_NEW_PROCESS_GROUP) y el ayudante **se ejecuto**. No se aplico ninguna
+  actualizacion real.
+- **(g) Comprobacion de versiones activada, consulta GitHub y NO se anuncia a si
+  mismo.** Con `check_updates` activo, `POST {action:"check_update"}` ->
+  `{"ok": true, "enabled": true}` y `/state.update` con la release publicada
+  mas reciente (`latest: "1.0.3"`, `checked_at`, `asset_url` del ZIP de la
+  1.0.3). Como `1.0.3 < 1.0.4`, **`available: false`**: el ejecutable **no se
+  anuncia a si mismo** una version nueva. La consulta es el GET anonimo de
+  siempre, sin datos del usuario.
+
+**No se tocó:** `panel/*`, `dicta_ui.py`, `dicta_icon.py`, el cierre limpio
+(`shutdown_service` sigue liberando la VRAM), la instancia unica, los atajos,
+`/state` (las claves de siempre siguen), `/upload`, `doc.*`,
+`upload.remove`, `MicTest`, la clase de reunion, el pegado por destino (solo se
+verifico) ni la comprobacion de version (sigue activada por defecto y sin
+enviar datos del usuario).
+
+**Aviso.** No se publico ninguna release ni se hizo push. La app quedo
+**ARRANCADA y viva** desde `.tmp/clean104` (el `.exe` 1.0.4 congelado):
+`GET /state` **200**, `version="1.0.4"`. Restos de la prueba en `.tmp/`
+(`clean104/`, `helper_104_portable.cmd`, registros y receptores).
