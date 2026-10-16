@@ -1,4 +1,4 @@
-# Registro de modificaciones — dicta (reuniones, documentos y UI)
+# Registro de modificaciones — Dicta (reuniones, documentos y UI)
 
 Fecha: 2026-07-10 · Acompañado del skill Impeccable (v4.5.0) para el diseño de UI.
 
@@ -287,7 +287,7 @@ propios aparecen en el índice del ejecutable.
 Es la prueba de que los `hiddenimports` de `dicta.spec` bastan: al abrir el
 `.exe` no debería salir `Sin burbuja flotante (falta dicta_shell)` en el log.
 
-## 19. Lanzar dicta no mostraba nada
+## 19. Lanzar Dicta no mostraba nada
 
 **Problema:** con `pythonw.exe` no hay consola y la app no abría ninguna
 ventana, así que «abrir dicta» no daba ninguna señal visible. Peor: si ya
@@ -336,7 +336,7 @@ nuevo, e informa cuántos cerró.
 `("shell", "toggle_panel")`. Si la burbuja está oculta y nunca se colocó, el
 notch se ancla a la esquina por defecto en vez de a las coordenadas (0, 0).
 
-## Nota sobre el icono de la bandeja (no es un fallo de dicta)
+## Nota sobre el icono de la bandeja (no es un fallo de Dicta)
 
 En `HKCU\Control Panel\NotifyIconSettings` hay tres entradas de dicta —una de
 ellas del ejecutable de un dicta ANTIGUO en `Documents\Voice to text\dicta\

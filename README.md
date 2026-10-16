@@ -1,4 +1,4 @@
-# dicta — dictado y transcripción de voz 100 % local
+# Dicta — dictado y transcripción de voz 100 % local
 
 [![Release](https://img.shields.io/github/v/release/JDMoreu/dicta?label=release&color=2ea44f)](https://github.com/JDMoreu/dicta/releases/latest)
 [![Windows 10/11](https://img.shields.io/badge/Windows-10%2F11-0078D6?logo=windows&logoColor=white)](#requisitos)
@@ -10,8 +10,8 @@ equipo: **el audio y el texto no salen de tu PC**.
 
 ![Demo: se añade un audio, se transcribe con barra de progreso y el texto queda en el panel](demo/dicta-demo.gif)
 
-*Esa es la demo real (10 s): se añade un audio, se transcribe solo y el resultado
-aparece en el panel. El [vídeo completo (1 min)](https://github.com/JDMoreu/dicta/releases/download/v1.0.7/Dicta_demo.mp4)
+*Esa es la demo completa (1 min, sin recortes): se añade un audio, se transcribe solo y el resultado
+aparece en el panel. El [vídeo original (1 min)](https://github.com/JDMoreu/dicta/releases/download/v1.0.7/Dicta_demo.mp4)
 está adjunto en la release.*
 
 ## Qué hace
@@ -42,14 +42,14 @@ en `models\`, se descarga solo la primera vez desde HuggingFace.
 ### Notas honestas
 
 - **Ventanas elevadas.** Si la aplicación donde quieres pegar corre como
-  administrador, dicta tiene que correr igual: el `.exe` ya pide permisos al
+  administrador, Dicta tiene que correr igual: el `.exe` ya pide permisos al
   abrir; desde el código, arráncalo con `run.bat` y acepta el aviso de UAC.
   Windows bloquea la automatización entre procesos de distinto nivel, así que no
   hay forma de evitarlo. No hay que desactivar Windows Defender.
 - **El panel** usa Chrome o Edge en modo aplicación (o WebView2). Sin ninguno de
   ellos el dictado y las transcripciones funcionan igual, pero los ajustes quedan
   solo en el menú de la bandeja.
-- **Windows 11 esconde los iconos nuevos de la bandeja.** Si no ves el de dicta
+- **Windows 11 esconde los iconos nuevos de la bandeja.** Si no ves el de Dicta
   junto al reloj: Configuración → Personalización → Barra de tareas → Otros
   iconos de la bandeja del sistema → dicta.
 
@@ -138,7 +138,7 @@ panel necesita permisos de escritura.
 - `whisper-server` **ignora el flag `-l`** al arrancar: el idioma y el prompt
   viajan en cada petición, así que cambiar de idioma o el diccionario no reinicia
   nada.
-- Un solo símbolo recorre la app, **la onda de dicta** (5 cápsulas con degradado
+- Un solo símbolo recorre la app, **la onda de Dicta** (5 cápsulas con degradado
   teal → azul → violeta), dibujada por una única función
   (`dicta_icon.wave_mark`) para la isla, la bandeja y el icono.
 
