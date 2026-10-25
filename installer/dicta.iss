@@ -7,7 +7,7 @@
 ; Compilar:  ISCC.exe installer\dicta.iss
 
 #define AppName "Dicta"
-#define AppVersion "1.0.8"
+#define AppVersion "1.0.9"
 #define AppPublisher "JDMoreu"
 #define AppExe "dicta.exe"
 #define PayloadDir "..\dist\dicta"

@@ -4,6 +4,33 @@ Fecha: 2026-07-10 · Acompañado del skill Impeccable (v4.5.0) para el diseño d
 
 Cada cambio incluye la validación concreta que lo confirmó.
 
+## v1.0.9 — 25 de octubre de 2026
+
+**La isla cambia de forma según el borde y el tema.**
+
+- **Arriba y en oscuro** la isla es la muesca del SVG del diseño: los hombros
+  son cóncavos —el cuerpo se ensancha en la primera fila y la curva se abre
+  HACIA AFUERA, como una rampa que se vuelve plana— y llevan 7 px, porque a 32
+  de alto los 12/113 del SVG (3,4 px) se leían como un escalón. Las esquinas
+  de abajo se quedan en 45/113 (12,7 px). El hombro se resta como un cuarto de
+  disco tangente por los dos extremos, así que no hay esquina viva.
+- **Arriba y en claro** no lleva hombros: el canto va recto pegado al borde de
+  la pantalla y el redondeo queda solo abajo.
+- **En posición Abajo** deja de ser muesca: es una pastilla de 128×32 con 16
+  de radio, centrada en la misma ventana para no moverse al cambiar de
+  posición.
+- La **vista previa de Apariencia** usa la misma geometría: camino SVG con
+  `clip-path` en oscuro y `border-radius` en claro y en la pastilla. La
+  pastilla ya no se pega al canto del recuadro: flota 10 px, como en pantalla.
+
+Validación, perfil del canto medido por filas sobre el fotograma a 100 %:
+
+| Caso | Primeras filas | Última fila |
+|---|---|---|
+| Arriba, oscuro | 136 · 134 · 132 · 130 · **128** | 110 |
+| Arriba, claro | **128** desde la primera (recto) | 110 |
+| Abajo (pastilla) | 104 · 110 · 114 · 118 → **128** al centro | 104 |
+
 ## v1.0.8 — 24 de octubre de 2026
 
 **Identidad nueva, panel React y reunión reconstruida.**

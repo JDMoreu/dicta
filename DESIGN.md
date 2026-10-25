@@ -96,25 +96,57 @@ bordes**: delimitar con luz y no con trazos. El aro de actividad late mientras
 dictas. Es la **única** ventana flotante de la app: no hay burbuja ni panel
 desplegable.
 
-**Cuelga del borde superior** (no flota): esquinas de arriba rectas y las de
-abajo redondeadas, para que se lea como una muesca del borde y no como una
-pastilla suelta. La forma sale de intersectar (máximo de dos SDF) el
-rectángulo recto con un rectángulo redondeado que sobresale por arriba del
-fotograma; el redondeo solo afecta entonces a las esquinas de abajo.
+**Cuelga del borde** (no flota): **hombros cóncavos** en el lado que toca la
+pantalla —el cuerpo se ensancha en la primera fila y la curva se abre HACIA
+AFUERA, como una rampa que se vuelve plana— y esquinas grandes en el lado
+libre, para que se lea como una muesca del borde y no como una pastilla
+suelta. La silueta es la del diseño (`viewBox` 675×113):
+
+```
+M-12 0A12 12 0 0 1 0 12V68A45 45 0 0 0 45 113H606A45 45 0 0 0 651 68V12A12 12 0 0 1 663 0Z
+```
+
+Es el notch de un MacBook: cuerpo recto, hombros cóncavos que lo abren hacia
+afuera en la fila del borde y esquinas grandes en el lado libre. El SVG los da
+en 12/113 del alto (3,4 px con 32) y 45/113; a 32 px el hombro del SVG se lee
+como un escalón, así que `ISLAND_FLARE` sube a **7 px**, que es el "ear" con el
+que las islas reales de macOS se leen como una rampa (las librerías de notch
+usan 10-13 pt sobre 32). La esquina libre se queda en 45/113 (12,7 px). Los dos
+entran como **fracción del alto**, así que la forma escala sola con el DPI y
+con el tamaño del cuerpo. El hombro se resta como un cuarto de disco con centro
+en el canto del cuerpo y radio `flare`: el material queda FUERA del disco, que
+es lo que abre la curva hacia afuera; restarlo así no toca el cuerpo porque el
+disco solo es tangente a su canto.
+
+**Los hombros son solo del tema oscuro.** En claro el cuerpo es blanco y el
+hombro no aporta nada: arriba va **recto** (sin radio ni hombros, pegado al
+borde) y el redondeo queda **solo abajo**. En los dos casos la isla mide lo
+mismo de ancho (128 de cuerpo; en oscuro la caja crece a 142 con los hombros y
+en claro el cuerpo va centrado en esa misma caja), así que cambiar de tema no
+mueve la ventana ni la onda.
+
+Con la isla **abajo no hay muesca**: flota, así que es una **pastilla** de
+cuatro esquinas redondeadas (r = alto/2) y del ancho del cuerpo (128), centrada
+en la misma ventana para que el tamaño no cambie al cambiar de posición.
 
 | Medida | Valor | Por qué |
 |---|---|---|
-| Alto | 36 | a 34, arriba y sin barra de tareas que la ancle, se veía pequeña |
-| Radio | 18 abajo · **0 arriba** | en el borde se lee como muesca |
-| Relleno lateral | 16 | con 15 la onda tocaba el radio inferior |
-| Onda | 96 (9 cápsulas de 6 con 5 de hueco) | a 84 el silencio parecía una raya |
-| Ancho | 128 sin texto · hasta 440 con texto | el texto se recorta, nunca se parte |
-| Distancia al borde | `y = work_area.top + 10` | respeta una barra de tareas arriba |
+| Alto | 32 | la onda de 16 cápsulas cabe sin aire de sobra |
+| Hombro | 7 px · 12/113 en el SVG · solo oscuro | a 3,4 px la rampa se leía como un escalón |
+| Esquina libre | 45/113 del alto (≈12,7 px) | la muesca del diseño, sin borde ni sombra |
+| Relleno lateral | 16 | con 15 la onda tocaba la esquina inferior |
+| Onda | 96 (16 cápsulas de 3 con 3 de hueco) | a 84 el silencio parecía una raya |
+| Cuerpo recto | 128 · caja 142 | sin texto: la isla es solo la onda |
+| Distancia al borde | 0 arriba · 10 abajo (`ISLAND_BOTTOM_GAP`) | pegada arriba, flotando abajo |
 
-Medido sobre el fotograma a 100 %: esquina de arriba **0,97** (recta), de abajo
-**0,00** (redondeada), 4470 píxeles opacos frente a 4332 de la variante
-flotante. En pantalla: **128×36 centrada en x=960 sobre 1920**, a 10 px del
-borde.
+Medido sobre el fotograma a 100 % (perfil del canto por filas): **en oscuro** la
+primera fila ocupa **136 px** de la caja y baja de uno en uno —134, 132, 130—
+hasta los **128** del cuerpo recto en la cuarta fila, que es la rampa del
+hombro; **en claro** las filas de arriba ya miden **128** desde la primera (el
+canto va recto) y solo cierran abajo. En las dos, las esquinas libres acaban en
+110 px en la última fila y el canto superior sale **opaco** (sin línea
+translúcida pegada al borde de la pantalla). En pantalla: **142×32 en oscuro y
+128×32 en claro, centradas en x=960 sobre 1920**.
 
 **Contraste (medido, no estimado).** Todo el texto pasa AA. Dos tokens del
 sistema se corrigieron al medirlos: el texto sobre el acento **no es blanco en

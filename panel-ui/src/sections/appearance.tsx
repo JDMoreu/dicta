@@ -57,6 +57,38 @@ const ISLAND_BAR_H = (() => {
   })
 })()
 
+/**
+ * Silueta REAL de la isla: cuerpo de 128 por 32 de alto. Arriba y en oscuro es
+ * la muesca del diseño (`viewBox` 675x113) con el hombro subido a 7 px, porque
+ * a 32 de alto el 12/113 se lee como un escalón: el hombro es un cuarto de
+ * disco que se abre HACIA AFUERA (concavo) y las esquinas de abajo llevan
+ * 45/113 del alto. En claro la muesca va recta arriba y solo redondea abajo.
+ * En posición Abajo la isla flota y es una pastilla de 16 de radio.
+ */
+const NOTCH = (() => {
+  const bodyW = 128
+  const h = 32
+  const f = 7
+  const r = (h * 45) / 113
+  const w = bodyW + 2 * f
+  return { bodyW, w, h, f, r }
+})()
+
+function notchPath() {
+  const { w, h, f, r } = NOTCH
+  return [
+    "M0 0",
+    `A${f} ${f} 0 0 1 ${f} ${f}`,          // hombro izquierdo, se abre afuera
+    `V${h - r}`,
+    `A${r} ${r} 0 0 0 ${f + r} ${h}`,      // esquina inferior izquierda
+    `H${w - f - r}`,
+    `A${r} ${r} 0 0 0 ${w - f} ${h - r}`,  // esquina inferior derecha
+    `V${f}`,
+    `A${f} ${f} 0 0 1 ${w} 0`,             // hombro derecho
+    "Z",
+  ].join("")
+}
+
 function IslandPreview() {
   const { state } = useLoadedApp()
   const pal = PALETTES.find((p) => p.key === state.island_palette) || PALETTES[0]
@@ -83,16 +115,39 @@ function IslandPreview() {
       <div
         className={cn(
           "absolute inset-x-0 flex justify-center",
-          top ? "top-0" : "bottom-0",
+          // Abajo la isla flota a 10 px del borde (ISLAND_BOTTOM_GAP): si se
+          // pegaba al canto parecía recortada.
+          top ? "top-0" : "bottom-[10px]",
         )}
       >
         <div
           className={cn(
-            // Geometría REAL de la isla: 128x32, onda de 96 px con 16 barras
-            // de 3 px y 3 de hueco, esquinas de 16 y sin borde ni sombra.
-            "flex h-8 w-[128px] items-center justify-center gap-[3px] overflow-hidden rounded-[16px]",
+            // Geometría REAL de la isla: cuerpo de 128 por 32 y onda de 96 px
+            // con 16 barras de 3 y 3 de hueco. Arriba y en oscuro, muesca con
+            // hombros; en claro la muesca va recta arriba y solo redondea
+            // abajo. En posición Abajo es una pastilla de 16 de radio.
+            "flex items-center justify-center gap-[3px]",
             dark ? "bg-black" : "bg-white",
           )}
+          style={
+            !top
+              ? {
+                  width: NOTCH.bodyW,
+                  height: NOTCH.h,
+                  borderRadius: NOTCH.h / 2,
+                }
+              : dark
+                ? {
+                    width: NOTCH.w,
+                    height: NOTCH.h,
+                    clipPath: `path("${notchPath()}")`,
+                  }
+                : {
+                    width: NOTCH.bodyW,
+                    height: NOTCH.h,
+                    borderRadius: `0 0 ${NOTCH.r}px ${NOTCH.r}px`,
+                  }
+          }
         >
           {ISLAND_BAR_H.map((h, i) => (
             <span

@@ -135,11 +135,23 @@ def _palette():
     return PALETTES.get(_PALETTE["name"], PALETTES["grafito"])
 
 
-# Geometría de la isla: misma proporción que la preview de Apariencia
-# (216×32, 8 barras finas) para que el ajuste y la isla real no diverjan.
+# Geometría de la isla: misma proporción que la preview de Apariencia para que
+# el ajuste y la isla real no diverjan.
 ISLAND_H = 32
-ISLAND_RADIUS = 16
 ISLAND_W = 128
+# Silueta del notch, copiada del SVG del diseño (viewBox 675×113): el cuerpo
+# recto se ensancha en la primera fila con dos hombros cóncavos y las esquinas
+# del lado libre llevan r=45 (45/113 del alto). El hombro del SVG son 12/113
+# del alto (3,4 px con 32): a ese tamaño se lee como un escalón, así que se
+# sube a 7 px, el "ear" con el que las islas de macOS se leen como una rampa y
+# no como un cajón. Los dos entran como fracción del ALTO para que la forma
+# escale sola con el DPI y con el tamaño del cuerpo.
+ISLAND_FLARE_PX = 7.0
+ISLAND_FLARE = ISLAND_FLARE_PX / float(ISLAND_H)
+ISLAND_R_FREE = 45.0 / 113.0
+# Ancho de la caja que envuelve la forma (cuerpo + hombros), que es lo que mide
+# la ventana; la onda se centra en ella.
+ISLAND_BODY_W = ISLAND_W + 2.0 * ISLAND_H * ISLAND_FLARE
 ISLAND_SHADOW = 2              # margen mínimo para el AA del canto (px)
 # Opacidad del cuerpo de la isla. 0.0 = solo la onda (sin píldora); 1.0 = la
 # píldora de cristal. Se deja como constante para poder comparar de un vistazo.
@@ -201,50 +213,94 @@ def _sd_box(x, y, cx, cy, hw, hh):
         + np.minimum(np.maximum(qx, qy), 0.0)
 
 
-_SCENE = {}          # geometría estática cacheada por tamaño (w, h, radius)
+def _sd_box_corners(x, y, cx, cy, hw, hh, r_top, r_bottom):
+    """SDF de un rectángulo con radios distintos arriba y abajo.
+
+    El radio se elige por mitad vertical: la fórmula del rectángulo redondeado
+    es exacta dentro de cada mitad y las dos dan el MISMO valor sobre el eje
+    (justo donde el cuerpo llega a su ancho máximo), así que la silueta sale
+    continua y sin costura visible.
+    """
+    r = np.where(y < cy, r_top, r_bottom)
+    qx = np.abs(x - cx) - (hw - r)
+    qy = np.abs(y - cy) - (hh - r)
+    return np.sqrt(np.maximum(qx, 0.0) ** 2 + np.maximum(qy, 0.0) ** 2) \
+        + np.minimum(np.maximum(qx, qy), 0.0) - r
 
 
-def _scene(w, h, radius, bw=None, bh=None, body_top=0.0):
+def _sd_notch(x, y, bw, bh, flare, r_free):
+    """SDF de la muesca: hombros cóncavos en el borde y esquinas grandes.
+
+    Silueta del diseño (``viewBox`` 675×113), con x DENTRO de la caja que
+    envuelve la forma (0..bw) e y de 0 a bh:
+
+    * El **cuerpo recto** mide ``bw - 2·flare`` y lleva las esquinas grandes
+      (r=45 de 113) en el lado libre.
+    * Los **hombros** ensanchan el cuerpo hasta ``bw`` en la primera fila: la
+      curva se abre HACIA AFUERA, es un cuarto de disco de radio ``flare`` con
+      centro en el canto del cuerpo, así que el material queda fuera del disco.
+      El SVG del diseño trae 12/113 del alto (3,4 px con 32), que a ese tamaño
+      se lee como un escalón; ``ISLAND_FLARE`` lo sube a 7 px.
+
+    Solo se usa con la isla arriba: abajo no hay muesca, es una pastilla.
+    """
+    f = float(flare)
+    # 1) cuerpo recto: de x=f a x=bw-f, arriba recto y abajo con r_free
+    d_body = _sd_box_corners(x, y, bw / 2.0, bh / 2.0, bw / 2.0 - f, bh / 2.0,
+                             0.0, float(r_free))
+    # 2) franja superior de ancho completo (los dos hombros)
+    d_top = _sd_box(x, y, bw / 2.0, f / 2.0, bw / 2.0, f / 2.0)
+    # 3) se les quita el cuarto de disco de cada hombro: (f - d) > 0 = fuera
+    dl = np.sqrt(x ** 2 + (y - f) ** 2)                   # centro en (0, f)
+    dr = np.sqrt((x - bw) ** 2 + (y - f) ** 2)            # centro en (bw, f)
+    return np.maximum(np.minimum(d_body, d_top), f - np.minimum(dl, dr))
+
+
+_SCENE = {}          # geometría estática cacheada por tamaño (w, h, bw, bh...)
+
+
+def _scene(w, h, bw=None, bh=None, body_top=0.0, light=False):
     """Rejilla, SDF y máscara del cuerpo: constantes en cada fotograma.
 
     La rampa de anti-alias se escala con el DPI: 1 px LÓGICO, no 1 px físico.
     A 200 % un borde de 1 px físico se ve escalonado; con 2 px se ve liso.
-    ``body_top`` deja margen arriba para el halo cuando la isla flota abajo."""
+    ``body_top`` deja margen arriba para el AA del canto cuando la isla flota
+    abajo. ``light`` entra en la clave porque la forma cambia con el tema: los
+    hombros solo se dibujan en oscuro."""
+
     bw = float(bw if bw else w)
     bh = float(bh if bh else h)
     at_top = _square_top()
-    key = (w, h, radius, bw, bh, at_top, float(body_top))
+    key = (w, h, bw, bh, at_top, float(body_top), bool(light))
     sc = _SCENE.get(key)
     if sc is None:
         ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
         x, y = xs + 0.5, ys + 0.5
-        # Coordenadas DENTRO del cuerpo: el fotograma tiene margen para la
-        # sombra en el lado CONTRARIO al borde de la pantalla. Arriba: el cuerpo
-        # va pegado al borde superior del fotograma y el margen queda abajo.
-        # Abajo: el cuerpo lleva margen arriba y abajo para que el halo rodee
-        # también el canto superior (la isla ya no nace del borde).
+        # Coordenadas DENTRO del cuerpo: el fotograma tiene margen para el AA
+        # del canto en el lado CONTRARIO al borde de la pantalla.
         xv = x - (w - bw) / 2.0
         yv = y - float(body_top)
-        r = float(radius)
-        if at_top:
-            # Colgando del borde: esquinas de arriba rectas (el cuerpo nace del
-            # borde) y las de abajo redondeadas, intersectando la banda
-            # inferior redondeada con una banda superior recta. Esa banda se
-            # pasa 2 px POR ENCIMA del fotograma: si el canto cae justo en el
-            # borde de la ventana, el antialias deja una línea translúcida
-            # pegada al borde de la pantalla.
-            # Intersección de SDF = max (con min sería la unión, y entonces el
-            # redondeo no llegaría a las esquinas de abajo).
-            recto = _sd_box(xv, yv, bw / 2.0, bh / 2.0, bw / 2.0, bh / 2.0)
-            # Redondeado que sobresale r por ARRIBA del fotograma: así sus
-            # esquinas redondas quedan fuera y solo redondean las de abajo.
-            redondo = _sd_box(xv, yv, bw / 2.0, (bh - r) / 2.0,
-                              bw / 2.0 - r, (bh - r) / 2.0) - r
-            d_shape = np.maximum(recto, redondo)
+        body_w = bw - 2.0 * bh * ISLAND_FLARE      # ancho sin hombros
+        if not at_top:
+            # Abajo la isla flota: pastilla con las cuatro esquinas redondeadas
+            # y sin hombros, que no cuelga de ningún borde. Va centrada en el
+            # fotograma, así el ancho de la ventana no cambia al cambiar de
+            # posición.
+            d_shape = _sd_box_corners(xv, yv, bw / 2.0, bh / 2.0,
+                                      body_w / 2.0, bh / 2.0,
+                                      bh / 2.0, bh / 2.0)
+        elif light:
+            # Encima de un fondo claro el blanco no necesita leerse como
+            # muesca: arriba va recto (sin hombros ni radio) y el redondeo
+            # queda solo abajo.
+            d_shape = _sd_box_corners(xv, yv, bw / 2.0, bh / 2.0,
+                                      body_w / 2.0, bh / 2.0,
+                                      0.0, bh * ISLAND_R_FREE)
         else:
-            d_shape = _sd_box(xv, yv, bw / 2.0, bh / 2.0,
-                              bw / 2.0 - r, bh / 2.0 - r) - r
-        ramp = max(1.0, r / 16.0)              # ≈ escala DPI (ISLAND_RADIUS=16)
+            # Colgando del borde en tema oscuro: muesca con hombros cóncavos.
+            d_shape = _sd_notch(xv, yv, bw, bh, bh * ISLAND_FLARE,
+                                bh * ISLAND_R_FREE)
+        ramp = max(1.0, bh / float(ISLAND_H))   # = escala DPI del cuerpo
         mask = np.clip((0.5 * ramp - d_shape) / ramp, 0.0, 1.0)
         _SCENE.clear()
         _SCENE[key] = sc = {"x": x, "y": y, "xs": xs, "mask": mask, "d": d_shape,
@@ -266,20 +322,20 @@ def _vivid_grad(grad, sat=1.24, gain=1.06):
     return tuple(out)
 
 
-def render_island_rgba(w, h, wave, wave_w, radius, grad, light, phase=0.0,
+def render_island_rgba(w, h, wave, wave_w, grad, light, phase=0.0,
                        body_w=None, body_h=None, body_dark=None,
                        body_light=None, body_top=0.0):
     """Un fotograma de la isla en BGRA premultiplicada (h, w, 4) uint8.
 
-    Geometría cacheada y un único composite de las 8 cápsulas. El cuerpo es
-    SÓLIDO en ambos temas, sin bordes ni efectos 3D: se modela con un subtrazo
-    interior muy tenue. La onda es plana y limpia (color + una luz vertical
-    sutil). Fuera del cuerpo va un halo monocromo muy sutil: sombra oscura en
-    tema claro y luz blanca en oscuro, para separarse de fondos del mismo color.
-    La rampa de anti-alias se escala con el DPI para que los bordes no se vean
-    escalonados. El color del cuerpo lo puede fijar la paleta
-    (`body_dark`/`body_light`)."""
-    sc = _scene(w, h, radius, body_w, body_h, body_top)
+    Geometría cacheada y un único composite de las 16 cápsulas. El cuerpo es
+    SÓLIDO en ambos temas, sin bordes ni efectos 3D. La onda es plana y limpia
+    (color + una luz vertical sutil). La forma la da ``_sd_notch``: hombros
+    cóncavos que ensanchan el cuerpo en la primera fila (``ISLAND_FLARE``) y
+    esquinas grandes en el lado libre (``ISLAND_R_FREE``). La rampa de
+    anti-alias se escala con el DPI para que los bordes no se vean escalonados.
+    El color del cuerpo lo puede fijar la paleta (`body_dark`/`body_light`)."""
+    sc = _scene(w, h, body_w, body_h, body_top, light)
+
     bw = float(body_w if body_w else w)
     bh = float(body_h if body_h else h)
     x, y, mask, d_shape = sc["x"], sc["y"], sc["mask"], sc["d"]
@@ -638,7 +694,7 @@ class IslandWindow(_LayeredBase):
     ``click_through=True``: la isla no roba clics (WS_EX_TRANSPARENT).
     """
 
-    def __init__(self, overlay, x, y, w, h, radius):
+    def __init__(self, overlay, x, y, w, h):
         if _SHELL_OK:
             super().__init__(int(w), int(h), int(x), int(y),
                              click_through=True, title="dicta-isla")
@@ -649,7 +705,6 @@ class IslandWindow(_LayeredBase):
             self.diag = "dicta_layered no disponible"
             self._dib_size = (0, 0)
         self.ov = overlay
-        self.radius = int(radius)
         self._interval = 1.0 / 60.0        # redibuja a 60 fps mientras se ve
         self._t_prev = time.monotonic()
 
@@ -710,7 +765,7 @@ class IslandWindow(_LayeredBase):
             grad = pal["listen_l"] if light else pal["listen"]
         wave = ov._wave_shape()
         return render_island_rgba(self.w, self.h, wave, ov._island_w_px(),
-                                 self.radius, _vivid_grad(grad), light,
+                                 _vivid_grad(grad), light,
                                  ov._phase, ov.BODY_W, ov.BODY_H,
                                  body_dark=_ISLAND_BODY,
                                  body_light=_ISLAND_BODY_LIGHT,
@@ -738,11 +793,11 @@ class VoiceOverlay:
         except Exception:
             _DPI["scale"] = 1.0
         s = self.s = _DPI["scale"]
-        self.SH = round(ISLAND_SHADOW * s)       # margen para el halo
+        self.SH = round(ISLAND_SHADOW * s)       # margen para el AA del canto
         self.BODY_H = round(ISLAND_H * s)        # alto del cuerpo
-        self.R = round(ISLAND_RADIUS * s)
         self.WW = round(ISLAND_WAVE_W * s)
-        self.BODY_W = round(ISLAND_W * s)        # mismo ancho que la preview
+        # Mismo ancho que la preview: cuerpo recto + los dos hombros.
+        self.BODY_W = round(ISLAND_BODY_W * s)
         # La ventana lleva el cuerpo + el margen de la sombra (a los lados y
         # por abajo; por arriba no, que nace del borde de la pantalla).
         self.W = self.BODY_W + self.SH * 2
@@ -844,7 +899,7 @@ class VoiceOverlay:
                     # click_through para no robar clics.
                     self._island = IslandWindow(self, self._island_x,
                                               self._island_y,
-                                              self.W, self.H, self.R)
+                                              self.W, self.H)
                 self._island.open()
             elif self._island is not None:
                 self._island.set_pos(self._island_x, self._island_y)
