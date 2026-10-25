@@ -1,0 +1,260 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --radius: 0.625rem;
+
+  --background: #f2f2f5;
+  --foreground: #1d1d1f;
+  --card: #ffffff;
+  --card-foreground: #1d1d1f;
+  --popover: #ffffff;
+  --popover-foreground: #1d1d1f;
+  --primary: #0066cc;
+  --primary-foreground: #ffffff;
+  --secondary: #f5f5f7;
+  --secondary-foreground: #1d1d1f;
+  --muted: #f5f5f7;
+  --muted-foreground: #67676d;
+  --accent: #ebebef;
+  --accent-foreground: #1d1d1f;
+  --destructive: #d70015;
+  --destructive-foreground: #ffffff;
+  --border: rgba(0, 0, 0, 0.1);
+  --input: rgba(0, 0, 0, 0.16);
+  --ring: #0066cc;
+
+  --success: #2e7d32;
+  --success-foreground: #ffffff;
+  --warning: #b25000;
+  --rec: #d70015;
+
+  /* Rampa del vúmetro: verde → verde amarillento → amarillo → naranja →
+     naranja rojizo → rojo fuerte. Se usa en «Entrada y umbral» y en la
+     grabación de reunión, para que el mismo nivel se lea igual en toda la app. */
+  --meter-1: #2f9e44;
+  --meter-2: #8bb800;
+  --meter-3: #d9a400;
+  --meter-4: #e2760a;
+  --meter-5: #d94a24;
+  --meter-6: #c1121f;
+
+  --surface-2: #f5f5f7;
+  --surface-3: #ebebef;
+  --text-2: #52525a;
+  --text-3: #67676d;
+
+  --shadow-lift: 0 0 0 1px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-lift-lg:
+    0 0 0 1px rgba(0, 0, 0, 0.045), 0 1px 2px rgba(0, 0, 0, 0.04),
+    0 8px 24px rgba(0, 0, 0, 0.06);
+  --shadow-menu:
+    0 1px 2px rgba(0, 0, 0, 0.06), 0 10px 30px rgba(0, 0, 0, 0.12),
+    0 0 0 1px rgba(0, 0, 0, 0.07);
+  --brand-gradient: linear-gradient(
+    135deg,
+    var(--brand-1) 0%,
+    var(--brand-2) 52%,
+    var(--brand-3) 100%
+  );
+  --rail-w: 212px;
+  --brand-1: #22c7d6;
+  --brand-2: #0066cc;
+  --brand-3: #7b61ff;
+}
+
+.dark {
+  --background: #0a0a0a;
+  --foreground: #f5f5f5;
+  --card: #121212;
+  --card-foreground: #f5f5f5;
+  --popover: #121212;
+  --popover-foreground: #f5f5f5;
+  --primary: #5b9dff;
+  --primary-foreground: #0b1220;
+  --secondary: #1c1c1c;
+  --secondary-foreground: #f5f5f5;
+  --muted: #1c1c1c;
+  --muted-foreground: #b3b3b3;
+  --accent: #262626;
+  --accent-foreground: #f5f5f5;
+  --destructive: #ff453a;
+  --destructive-foreground: #1a0a0b;
+  --border: rgba(255, 255, 255, 0.1);
+  --input: rgba(255, 255, 255, 0.18);
+  --ring: #5b9dff;
+
+  --success: #30d158;
+  --success-foreground: #0b1f10;
+  --warning: #ff9f0a;
+  --rec: #ff453a;
+
+  --meter-1: #30d158;
+  --meter-2: #a8e020;
+  --meter-3: #ffd60a;
+  --meter-4: #ff9f0a;
+  --meter-5: #ff6b2c;
+  --meter-6: #ff3b30;
+
+  --surface-2: #1c1c1c;
+  --surface-3: #262626;
+  --text-2: #b3b3b3;
+  --text-3: #8c8c8c;
+
+  --shadow-lift: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  --shadow-lift-lg: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  --shadow-menu: 0 0 0 1px rgba(255, 255, 255, 0.1);
+
+  --brand-1: #2fd8e6;
+  --brand-2: #5b9dff;
+  --brand-3: #a78bfa;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-rec: var(--rec);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-text-2: var(--text-2);
+  --color-text-3: var(--text-3);
+
+  --font-sans:
+    "Segoe UI Variable Text", "Segoe UI Variable Display", "Segoe UI",
+    system-ui, "Helvetica Neue", sans-serif;
+  --font-mono: "Cascadia Mono", ui-monospace, Consolas, monospace;
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+
+  --shadow-lift: var(--shadow-lift);
+  --shadow-lift-lg: var(--shadow-lift-lg);
+  --shadow-menu: var(--shadow-menu);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  html,
+  body {
+    /* `clip`, no `hidden`: con hidden el foco del desplegable puede desplazar
+       el documento por programa y toda la ventana salta hacia arriba. */
+    overflow: clip;
+  }
+  body {
+    @apply bg-background text-foreground font-sans text-[13px] antialiased;
+    overscroll-behavior: none;
+    user-select: none;
+    cursor: default;
+    text-rendering: optimizeLegibility;
+  }
+  button {
+    font: inherit;
+  }
+  ::selection {
+    background: color-mix(in srgb, var(--primary) 24%, transparent);
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: var(--border);
+    border-radius: 9px;
+    border: 3px solid transparent;
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: var(--text-3);
+    background-clip: content-box;
+  }
+}
+
+@keyframes dlg-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dlg-box-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes brand-pan {
+  from {
+    background-position: 0% 50%;
+  }
+  to {
+    background-position: 100% 50%;
+  }
+}
+
+@keyframes rec-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Lista de selección: el texto tiene ancho propio y el hueco del check queda
+   reservado; así el truncado con puntos suspensivos es determinista. */
+[data-slot="select-item"] {
+  padding-right: 1.75rem;
+}
+[data-slot="select-item"] [data-slot="select-item-text"] {
+  display: flex;
+  flex: 1 1 0%;
+  width: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+[data-slot="select-item"] [data-slot="select-item-text"] > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

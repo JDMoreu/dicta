@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <link id="favicon" rel="icon" type="image/png" href="/panel/icon.png?size=32&v=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="light dark" />
+    <script>
+      (function () {
+        var root = document.documentElement;
+        if (root.dataset.theme) return;
+        var mode = localStorage.getItem("dicta-theme-mode");
+        var stored = localStorage.getItem("dicta-theme");
+        var dark;
+        if (mode === "auto") dark = matchMedia("(prefers-color-scheme: dark)").matches;
+        else if (mode === "light" || mode === "dark") dark = mode === "dark";
+        else if (stored === "light" || stored === "dark") dark = stored === "dark";
+        else dark = matchMedia("(prefers-color-scheme: dark)").matches;
+        root.classList.toggle("dark", dark);
+        root.dataset.theme = dark ? "dark" : "light";
+        root.style.colorScheme = dark ? "dark" : "light";
+      })();
+    </script>
+    <title>Dicta</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

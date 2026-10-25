@@ -23,7 +23,8 @@ Layout produced:
         dicta.exe            <- sin consola y SIN elevacion (portable)
         dicta.exe.config     <- AL LADO del .exe (lo lee .NET)
         _internal/           <- bundle (sys._MEIPASS)
-            panel/           <- served by the internal http.server
+            panel/           <- barra de ventana integrada (desktop.js)
+            panel-next/      <- React UI build served by the internal http.server
             whisper_bin/Release/whisper-cli.exe   (+ ggml*.dll, whisper.dll)
             whisper_vulkan/whisper-server.exe      (+ ggml-vulkan.dll, ...)
         models/              <- EXTERNAL, next to dicta.exe (se copia aparte)
@@ -46,7 +47,8 @@ PROJECT = os.path.abspath(SPECPATH)
 
 # ---------------------------------------------------------------- datas
 # Bundled resources (read from sys._MEIPASS at runtime).
-datas = [(os.path.join(PROJECT, "panel"), "panel")]
+datas = [(os.path.join(PROJECT, "panel"), "panel"),
+         (os.path.join(PROJECT, "panel-next"), "panel-next")]
 
 # El icono también se usa EN CALIENTE (icono de la ventana del panel), así que
 # tiene que viajar en el bundle y no solo como icono del .exe.

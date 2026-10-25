@@ -230,7 +230,7 @@ SERVER_LOG = os.path.join(SCRIPT_DIR, "whisper_server.log")
 # aqui sale `/state.version` (el panel la pinta como vX.Y.Z) y el log de
 # arranque. El comparador de actualizaciones tambien la usa. `APP_VERSION` se
 # conserva como alias por compatibilidad.
-VERSION = "1.0.7"
+VERSION = "1.0.8"
 APP_VERSION = VERSION
 WHISPER_EXE = os.path.join(RESOURCE_DIR, "whisper_bin", "Release", "whisper-cli.exe")
 # Motores GPU: cada backend vive en su carpeta con su whisper-server + DLLs.
@@ -318,6 +318,25 @@ def config_set(key, value):
             json.dump(d, f)
     except Exception:
         pass
+
+
+def system_theme(default="light"):
+    """Tema de aplicaciones de Windows: claro u oscuro.
+
+    Lee `AppsUseLightTheme` (el mismo ajuste que usan Explorer y las apps
+    nativas). Si no existe o no estamos en Windows, devuelve `default`."""
+    if os.name != "nt":
+        return default
+    try:
+        import winreg
+        with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Themes"
+                r"\Personalize") as key:
+            value, _ = winreg.QueryValueEx(key, "AppsUseLightTheme")
+        return "light" if int(value) else "dark"
+    except Exception:
+        return default
 
 
 # ------------------------------------------ actualizacion desde la propia app
@@ -578,7 +597,7 @@ def _helper_script(staging, dest, exe, tmp, frozen, updlog, app_pid):
     """
     L = [
         "@echo off",
-        "rem Ayudante de actualizacion de dicta (generado por la app).",
+        "rem Ayudante de actualizacion de Dicta (generado por la app).",
         "rem Espera a que la app se cierre, sustituye los ficheros del paquete y",
         "rem la vuelve a arrancar. Deja registro por pasos en update.log.",
         "setlocal enableextensions",
@@ -1674,13 +1693,15 @@ def _es_ventana_propia(hwnd) -> bool:
             return True                  # la isla
         if clase != "Chrome_WidgetWin_1":
             return False
-        # Red de seguridad: la ventana app del panel se llama «dicta» (Chrome le
-        # pisa el título único) o «dicta-panel-<pid>-<id>» antes de eso.
+        # Red de seguridad: la ventana app del panel se llama «Dicta — Ajustes»
+        # (Chrome le pisa el título único) o «dicta-panel-<pid>-<id>» antes de
+        # eso.
         n = _user32.GetWindowTextLengthW(hwnd)
         titulo = ctypes.create_unicode_buffer(n + 1)
         _user32.GetWindowTextW(hwnd, titulo, n + 1)
-        t = titulo.value.strip()
-        return t == "dicta" or t.startswith("dicta-panel-")
+        t = titulo.value.strip().casefold()
+        return (t == "dicta" or t.startswith("dicta-panel-")
+                or t == PANEL_TITLE.casefold())
     except Exception:
         return False
 
@@ -3181,8 +3202,15 @@ class MeetingTranscriber:
         self.paused = False
         self.mic_on = bool(config_get("meeting_mic", True))
         self.last = ""                    # última intervención transcrita
+        # Transcripción completa en memoria: el panel la muestra con scroll,
+        # no solo la última línea. Se arma con párrafos cerrados + el actual.
+        self._lines = []
+        self._cur = ""
+        self._cur_ts = ""
         # Niveles para la vista previa (0..1): por pista y el mix.
         self.level = self.level_sys = self.level_mic = 0.0
+        self.db_sys = self.db_mic = -90.0
+        self._t_sys = self._t_mic = 0.0     # último bloque recibido
         self._lvl_sys = self._lvl_mic = 0.0
         # Bandas de frecuencia por pista (grave->agudo, 0..1) para el panel.
         self.levels_sys = [0.0] * LEVEL_BANDS
@@ -3209,16 +3237,31 @@ class MeetingTranscriber:
         return max(0, time.monotonic() - self.started - self._paused_total)
 
     def snapshot(self):
+        lvl_sys, db_sys = self._live(self.level_sys, self.db_sys, self._t_sys)
+        lvl_mic, db_mic = self._live(self.level_mic, self.db_mic, self._t_mic)
         return {"active": self.active, "paused": self.paused,
                 "mic_on": bool(self.mic_on),
                 "doc": self.doc, "wav": self.wav,
                 "status": self.status, "last": self.last,
-                "level": round(self.level, 4),
-                "level_sys": round(self.level_sys, 4),
-                "level_mic": round(self.level_mic, 4),
+                "transcript": self._transcript(),
+                "level": round(max(lvl_sys, lvl_mic), 4),
+                "level_sys": round(lvl_sys, 4),
+                "level_mic": round(lvl_mic, 4),
+                # dBFS reales: la barra usa el nivel, la etiqueta los dB.
+                "db_sys": round(db_sys, 1),
+                "db_mic": round(db_mic, 1),
                 "mic": self.mic_device,
                 "levels": self.levels(),
                 "seconds": int(self._running_seconds())}
+
+    def _transcript(self):
+        """Transcripción completa en texto plano, lista para el panel."""
+        parts = list(self._lines[-80:])
+        if self._cur:
+            ts = f"[{self._cur_ts}] " if self._cur_ts else ""
+            parts.append(ts + self._cur)
+        txt = "\n\n".join(parts)
+        return txt[-6000:]
 
     def levels(self):
         """Bandas (grave->agudo) por pista para el panel + aviso de silencio.
@@ -3297,6 +3340,8 @@ class MeetingTranscriber:
         self.status = "iniciando"
         self._stop_evt = threading.Event()
         self.level = self.level_sys = self.level_mic = 0.0
+        self.db_sys = self.db_mic = -90.0
+        self._t_sys = self._t_mic = 0.0     # último bloque recibido
         self._lvl_sys = self._lvl_mic = 0.0
         self.levels_sys = [0.0] * LEVEL_BANDS
         self.levels_mic = [0.0] * LEVEL_BANDS
@@ -3360,6 +3405,18 @@ class MeetingTranscriber:
                         dev = config_get("mic")
                     except Exception:
                         dev = None
+                    # El «Asignador de sonido Microsoft» es un alias MME que en
+                    # WASAPI compartido entrega silencio: si está elegido, se
+                    # usa el dispositivo de entrada predeterminado de verdad.
+                    # Sin esto el medidor del micrófono no se movía nunca.
+                    try:
+                        if dev is not None:
+                            nm = str(sd.query_devices(dev, "input")
+                                     .get("name", "")).lower()
+                            if "asignador de sonido" in nm or "sound mapper" in nm:
+                                dev = None
+                    except Exception:
+                        pass
                     if dev != cur_dev:
                         if stream is not None:
                             try:
@@ -3374,7 +3431,10 @@ class MeetingTranscriber:
                                     if dev is not None
                                     else sd.query_devices(kind="input"))
                             sr = float(info.get("default_samplerate") or self.SR)
-                            block = max(1024, int(sr * 0.25))
+                            # 50 ms por bloque: con 250 ms el medidor del panel
+                            # solo se refrescaba 4 veces por segundo y parecía
+                            # congelado. La grabación no cambia, solo el feedback.
+                            block = max(480, int(sr * 0.05))
                             stream = sd.InputStream(
                                 samplerate=sr, channels=1, dtype="float32",
                                 device=dev, blocksize=block)
@@ -3537,9 +3597,12 @@ class MeetingTranscriber:
                             fh.write(f"**[{para_ts}]** "
                                      + " ".join(para) + "\n\n")
                             fh.flush()
+                            self._lines.append(f"[{para_ts}] " + " ".join(para))
                         para = []
                         para_ts = None
                         para_dur = 0.0
+                        self._cur = ""
+                        self._cur_ts = ""
 
                     while not self._stop_evt.is_set():
                         if self.paused:
@@ -3687,6 +3750,8 @@ class MeetingTranscriber:
                                 para.append(text.strip())
                                 self.last = (f"[{lt.tm_hour:02d}:{lt.tm_min:02d}]"
                                              f" {text}")
+                                self._cur = " ".join(para)
+                                self._cur_ts = para_ts or ""
                             if para:
                                 para_dur += window_n / self.SR
                                 if corte or para_dur >= PARA_MAX:
@@ -3712,6 +3777,8 @@ class MeetingTranscriber:
                             para.append(text.strip())
                             self.last = (f"[{lt.tm_hour:02d}:{lt.tm_min:02d}]"
                                          f" {text}")
+                            self._cur = " ".join(para)
+                            self._cur_ts = para_ts or ""
                     # Cierra el ultimo parrafo antes de cerrar el fichero.
                     flush_para()
                 finally:
@@ -3736,15 +3803,21 @@ class MeetingTranscriber:
                         log(f"Reunión normalizar: {type(e).__name__}: {e!r}")
                 dur = self._running_seconds()
                 mins, secs = divmod(int(dur), 60)
-                temas = _keywords(" ".join(
-                    line[line.find("** ") + 3:] if "** " in line else line
-                    for line in open(self.doc, encoding="utf-8")))
-                fh2 = open(self.doc, "a", encoding="utf-8")
-                fh2.write(f"\n*Duración {mins}:{secs:02d} · grabación: "
-                          f"{os.path.basename(self.wav)}*\n\n## Temas\n\n"
-                          + "\n".join(f"- {k}" for k in temas))
-                fh2.close()
-                finished = True
+                # Tras cancelar, doc y wav son None: sin esta guarda el cierre
+                # reventaba con «expected str... not NoneType» y la reunión
+                # siguiente arrancaba en estado de error.
+                if self._cancelled or not (self.doc and self.wav):
+                    finished = True
+                else:
+                    temas = _keywords(" ".join(
+                        line[line.find("** ") + 3:] if "** " in line else line
+                        for line in open(self.doc, encoding="utf-8")))
+                    fh2 = open(self.doc, "a", encoding="utf-8")
+                    fh2.write(f"\n*Duración {mins}:{secs:02d} · grabación: "
+                              f"{os.path.basename(self.wav)}*\n\n## Temas\n\n"
+                              + "\n".join(f"- {k}" for k in temas))
+                    fh2.close()
+                    finished = True
             except Exception as e:
                 self.status = f"error: {e}"
                 log(f"Reunión: {e}")
@@ -3773,23 +3846,53 @@ class MeetingTranscriber:
     def _note_level(self, mono, is_loopback):
         """Nivel de captura para la vista previa en vivo.
 
-        Ataque rapido y caida lenta (como el oido): con caida rapida la onda
-        parpadea. Se guarda por pista y el mix es la mayor de las dos.
+        Ataque inmediato y caída rápida: con una caída lenta la barra del panel
+        se queda «pegada» y parece que no responde. Se guarda el nivel por pista
+        (para la barra) y los dBFS reales (para la etiqueta numérica).
         """
         try:
-            v = float(np.sqrt(np.mean(np.square(mono)))) if len(mono) else 0.0
+            raw = float(np.sqrt(np.mean(np.square(mono)))) if len(mono) else 0.0
         except Exception:
             return
-        v = min(1.0, v / 0.15)            # 0,15 de RMS = reunion ya muy alta
+        db = max(-90.0, 20.0 * float(np.log10(max(raw, 1e-6))))
+        v = min(1.0, raw / 0.10)          # 0,10 de RMS = reunión ya muy alta
         prev = self._lvl_sys if is_loopback else self._lvl_mic
-        cur = v if v > prev else prev * 0.82
+        cur = v if v > prev else prev * 0.78
+        now = time.monotonic()
+        # Los bloques en cero (el dispositivo a veces entrega silencio digital)
+        # no deben borrar la última medida: se conserva y la caída la aplica
+        # `_live`, que es lo que mantiene el medidor «vivo» sin saltos a -90.
+        real = raw > 1e-5
         if is_loopback:
             self._lvl_sys = cur
             self.level_sys = cur
+            if real:
+                self.db_sys = db
+            self._t_sys = now
         else:
             self._lvl_mic = cur
             self.level_mic = cur
+            if real:
+                self.db_mic = db
+            self._t_mic = now
         self.level = max(self._lvl_sys, self._lvl_mic)
+
+    def _live(self, lvl, db, t):
+        """Nivel y dB con caída por TIEMPO.
+
+        El loopback de WASAPI deja de entregar bloques cuando no hay audio, así
+        que sin esto la barra se quedaba clavada en el último valor. Con una
+        vida media de 450 ms, en silencio baja sola sin cortar en seco.
+        """
+        age = max(0.0, time.monotonic() - float(t or 0.0))
+        if age <= 0.0:
+            return float(lvl), float(db)
+        f = 0.5 ** (age / 0.45)
+        v = float(lvl) * f
+        d = float(db) + 20.0 * float(np.log10(f))
+        if v < 0.002:
+            v = 0.0
+        return v, max(-90.0, d)
 
     def dismiss(self):
         """Olvida el resumen de la ultima reunion (cierra la tarjeta del panel).
@@ -3822,6 +3925,8 @@ class MeetingTranscriber:
         self.proc = None
         self.paused = False
         self.level = self.level_sys = self.level_mic = 0.0
+        self.db_sys = self.db_mic = -90.0
+        self._t_sys = self._t_mic = 0.0
         self.levels_sys = [0.0] * LEVEL_BANDS
         self.levels_mic = [0.0] * LEVEL_BANDS
         self.sys_silent = self.mic_silent = True
@@ -4056,7 +4161,9 @@ def _export_owner():
 class ControlServer:
     """Servidor local del panel de ajustes.
 
-        GET  /panel[/style.css|/app.js]  -> interfaz
+        GET  /panel[/]                   -> interfaz React compilada
+        GET  /panel-next/[...]           -> alias de la interfaz React
+        GET  /panel/desktop.js          -> barra de ventana integrada
         GET  /state                       -> estado actual en JSON
         POST /rpc                         -> {"action": ..., "value": ...}
 
@@ -4065,11 +4172,23 @@ class ControlServer:
     encolan en ui_events para que los aplique el hilo principal de Tk (sus
     handlers tocan widgets)."""
 
-    PANEL_FILES = {"/panel": "index.html", "/panel/": "index.html",
-                   "/panel/style.css": "style.css", "/panel/app.js": "app.js",
-                   # Barra de ventana integrada: solo la pide el backend de
-                   # WebView2, que la inyecta al cargar (panel/desktop.js).
-                   "/panel/desktop.js": "desktop.js"}
+    # Solo la barra de ventana integrada: la interfaz es el build de React
+    # (panel-next), así que los antiguos app.js/style.css ya no se sirven.
+    PANEL_FILES = {"/panel/desktop.js": "desktop.js"}
+
+    PANEL_ASSET_TYPES = {
+        ".html": "text/html; charset=utf-8",
+        ".js": "text/javascript; charset=utf-8",
+        ".mjs": "text/javascript; charset=utf-8",
+        ".css": "text/css; charset=utf-8",
+        ".json": "application/json; charset=utf-8",
+        ".map": "application/json; charset=utf-8",
+        ".svg": "image/svg+xml",
+        ".png": "image/png",
+        ".ico": "image/x-icon",
+        ".woff": "font/woff",
+        ".woff2": "font/woff2",
+    }
 
     def __init__(self, port, get_state, post_action):
         self.port = port
@@ -4084,6 +4203,7 @@ class ControlServer:
 
         control = self
         panel_dir = os.path.join(RESOURCE_DIR, "panel")
+        next_dir = os.path.join(RESOURCE_DIR, "panel-next")
 
         class Handler(http.server.BaseHTTPRequestHandler):
             protocol_version = "HTTP/1.1"
@@ -4156,6 +4276,46 @@ class ControlServer:
                         self.wfile.write(raw)
                     except Exception:
                         pass
+                    return
+                if path in ("/panel", "/panel/", "/panel-next", "/panel-next/"):
+                    rel = "index.html"
+                elif path.startswith("/panel-next/"):
+                    import urllib.parse
+                    rel = urllib.parse.unquote(path[len("/panel-next/"):])
+                    if not rel or ".." in rel or "\\" in rel:
+                        self._send(404, b"not found", "text/plain")
+                        return
+                    root = os.path.abspath(next_dir)
+                    f = os.path.abspath(os.path.join(root, rel))
+                    if os.path.commonpath((f, root)) != root:
+                        self._send(404, b"not found", "text/plain")
+                        return
+                else:
+                    rel = None
+                if rel:
+                    f = os.path.join(next_dir, rel)
+                    try:
+                        with open(f, "rb") as fh:
+                            body = fh.read()
+                    except Exception:
+                        self._send(404, b"not found", "text/plain")
+                        return
+                    if rel == "index.html":
+                        # El HTML se pinta antes de que React tenga /state:
+                        # marcamos ya el tema efectivo para que la pantalla de
+                        # carga no parpadee en claro cuando la app va en oscuro.
+                        theme = ("dark" if str(getattr(app, "theme", "light"))
+                                 .lower() == "dark" else "light")
+                        attrs = f' data-theme="{theme}"'
+                        if theme == "dark":
+                            attrs += ' class="dark"'
+                        body = body.replace(
+                            b'<html lang="es">',
+                            f'<html lang="es"{attrs}>'.encode("utf-8"), 1)
+                    ctype = ControlServer.PANEL_ASSET_TYPES.get(
+                        os.path.splitext(rel)[1].lower(),
+                        "application/octet-stream")
+                    self._send(200, body, ctype)
                     return
                 name = ControlServer.PANEL_FILES.get(path)
                 if name:
@@ -4788,7 +4948,7 @@ def _panel_hwnd(window_title: str, pid: int = 0):
     return found[0] if found else 0
 
 
-PANEL_TITLE = "dicta \u2014 Ajustes"     # título de la ventana del panel
+PANEL_TITLE = "Dicta \u2014 Ajustes"     # título de la ventana del panel
 
 
 # ------------------------------------------------ backend de la ventana
@@ -5169,7 +5329,7 @@ class WebViewPanelHost:
     se carga la URL cuando el servidor de control ya tiene puerto.
 
     Sin barra nativa: `panel/desktop.js` (inyectado al cargar) pinta
-    «dicta — Ajustes» y los botones de minimizar/maximizar/cerrar.
+    «Dicta — Ajustes» y los botones de minimizar/maximizar/cerrar.
     """
 
     def __init__(self, window=None):
@@ -5558,7 +5718,7 @@ class WebViewPanelHost:
 
 
 def _panel_bg(theme=None):
-    """Color de fondo del panel (los mismos tokens --bg de panel/style.css)."""
+    """Color de fondo del panel (los mismos tokens --bg de la interfaz)."""
     t = (theme or app.theme or config_get("theme", "light") or "light").lower()
     return "#141418" if t == "dark" else "#F2F2F5"
 
@@ -5570,10 +5730,10 @@ def _panel_icon_png(size, theme=None):
     """PNG del icono REAL de dicta, para la barra del panel.
 
     Es el MISMO render que el de la bandeja y el del .exe:
-    ``dicta_icon.render_icon(size, variant="mark", bg=False)`` —las 5 líneas
-    sobre el azulejo **opaco** (blanco puro en tema claro)—, con el mismo tema
-    que usa ``make_tray_image`` (tema de la app). Así la barra del panel no
-    puede divergir del icono de la bandeja: es literalmente el mismo dibujo.
+    ``dicta_icon.render_icon(size, variant="mark", bg=False)`` —la onda y el
+    cursor sobre el azulejo **opaco** (blanco en claro, grafito en oscuro)—, con
+    el tema que usa ``make_tray_image``. Así la barra del panel no puede
+    divergir del icono de la bandeja: es literalmente el mismo dibujo.
 
     ``theme=None`` sigue el tema de la app. El resultado se cachea en memoria
     por (tamaño, tema): la barra se repinta en cada carga y no hay que volver a
@@ -5628,19 +5788,19 @@ def icon_version():
 
 
 _ICON_ICO_CACHE = {}             # tema -> ruta del .ico OFICIAL
-_ICON_ICO_VER = "6"              # versión del dibujo oficial (nombre del .ico)
+_ICON_ICO_VER = "9"              # versión del dibujo oficial (nombre del .ico)
 
 
 def _official_icon_ico(theme=None):
     """Ruta de un .ico con EL MISMO dibujo que la bandeja (icono oficial).
 
     ``dicta_icon.write_ico(theme=...)`` redibuja cada talla con
-    ``dicta_icon.official_image`` (las 5 líneas sobre el azulejo opaco: blanco
-    puro en claro): el mismo render que la bandeja y la barra del panel. Se
-    escribe uno por tema y se cachea; la barra de tareas (WM_SETICON) y el
-    parámetro ``icon=`` de WebView2 leen de aquí. Antes se cargaba el
-    ``dicta.ico`` estático (tema oscuro): con el tema claro la ventana mostraba
-    el icono oscuro mientras la bandeja cambiaba, es decir DOS identidades.
+    ``dicta_icon.official_image`` (la onda y el cursor sobre el azulejo opaco
+    del tema): el mismo render que la bandeja y la barra del panel. Se escribe uno por tema y se cachea; la barra de tareas
+    (WM_SETICON) y el parámetro ``icon=`` de WebView2 leen de aquí. Antes se
+    cargaba el ``dicta.ico`` estático (tema oscuro): con el tema claro la
+    ventana mostraba el icono oscuro mientras la bandeja cambiaba, es decir DOS
+    identidades.
 
     El nombre lleva ``_ICON_ICO_VER``: el .ico se cachea en disco y solo se
     reescribe si falta, así que SIN la versión en el nombre un cambio de dibujo
@@ -5843,7 +6003,7 @@ class PanelHost:
             # proceso (comprobado). Chrome la dibuja según el `color-scheme` y
             # el <meta name="theme-color"> de la página del panel.
             # El título único solo sirve para LOCALIZAR la ventana: en la barra
-            # de tareas tiene que leerse «dicta — Ajustes», no
+            # de tareas tiene que leerse «Dicta — Ajustes», no
             # "dicta-panel-1234-7f3a".
             # Chrome lo pisa con el de la página al acabar de cargar, así que
             # hay que volver a aplicarlo hasta que la ventana se asiente.
@@ -5954,7 +6114,12 @@ class App:
         self.current_transcript = ""
         self.wave_data = (0.0,) * 160
         self.gen = 0               # generación de la sesión: anula huérfanos
-        self.theme = config_get("theme", "light")   # claro por defecto
+        self.theme_mode = str(config_get("theme_mode", "auto")).lower()
+        if self.theme_mode not in ("auto", "light", "dark"):
+            self.theme_mode = "auto"
+        self.theme = (system_theme()
+                      if self.theme_mode == "auto"
+                      else self.theme_mode)
         self.island_pos = config_get("island_pos", "top")       # top | bottom
         self.island_palette = config_get("island_palette", "grafito")
         self.engine = config_get("engine", "auto")   # auto|vulkan|cuda|cpu
@@ -6471,10 +6636,11 @@ class Overlay:
         self.mic = mic
         self.root = tk.Tk()
         self.root.withdraw()                    # sin ventana principal visible
-        self.root.title("dicta")
+        self.root.title("Dicta")
         self.ui_events = queue.SimpleQueue()    # eventos del tray -> Tk
         self._last_state = ("idle", False)
         self._overlay_auto_hide = None
+        self._theme_probe = 0.0
 
         self.overlay = dicta_ui.VoiceOverlay(self.root)
         dicta_ui.set_theme(app.theme)          # isla + tarjeta en el tema fijo
@@ -6580,10 +6746,10 @@ class Overlay:
         return {"ok": True, "check_updates": enabled,
                 "update": dict(UPDATE_STATE)}
 
-    def on_theme(self, name):
-        app.theme = "light" if name == "light" else "dark"
-        config_set("theme", app.theme)
-        log(f"Tema: {app.theme}")
+    def _apply_theme(self, theme, persist=True):
+        app.theme = "light" if theme == "light" else "dark"
+        if persist:
+            config_set("theme", app.theme)
         try:
             import dicta_ui
             dicta_ui.set_theme(app.theme)     # isla + tarjeta de transcripción
@@ -6605,7 +6771,19 @@ class Overlay:
                 _wm_set_icon(hwnd, app.theme)
         except Exception:
             pass
-        self.tray.refresh()
+        try:
+            self.tray.refresh()
+        except Exception:
+            pass
+
+    def on_theme(self, name):
+        mode = str(name or "").strip().lower()
+        if mode not in ("auto", "light", "dark"):
+            mode = "light"
+        app.theme_mode = mode
+        config_set("theme_mode", mode)
+        self._apply_theme(system_theme() if mode == "auto" else mode)
+        log(f"Tema: {app.theme} ({mode})")
 
     def on_island_pos(self, name):
         """Posición de la isla (arriba/abajo): aplica en caliente y persiste."""
@@ -6827,7 +7005,7 @@ class Overlay:
 
     def probe_test_input(self):
         hwnd = app.target_hwnd or _user32.GetForegroundWindow()
-        start_delivery("prueba dicta 123", hwnd, app.target_title or _fg_title())
+        start_delivery("prueba Dicta 123", hwnd, app.target_title or _fg_title())
 
     def quit(self):
         # CIERRE LIMPIO **antes** de tocar la GUI: suelta el modelo de la GPU
@@ -6902,7 +7080,9 @@ class Overlay:
                 "gpu_device_note": getattr(app, "gpu_device_note", ""),
                 "icon_version": icon_version(),
                 "models": model_options(),
-                "language": app.language, "sens": app.sens, "theme": app.theme,
+                "language": app.language, "sens": app.sens,
+                "theme": app.theme,
+                "theme_mode": getattr(app, "theme_mode", "auto"),
                 "voice_threshold": round(float(app.voice_threshold), 6),
                 "silence_wait": round(float(app.silence_wait), 3),
                 "paste_mode": str(getattr(app, "paste_mode", "auto")),
@@ -7146,6 +7326,14 @@ class Overlay:
 
     # ---- ciclo de vida
     def tick(self):
+        if app.theme_mode == "auto":
+            now = time.monotonic()
+            if now - self._theme_probe >= 1.5:
+                self._theme_probe = now
+                detected = system_theme()
+                if detected != app.theme:
+                    self._apply_theme(detected, persist=False)
+                    log(f"Tema del sistema: {detected}")
         service_app(self.mic, app.mode)
         if app.dismiss_overlay:            # pegado/cancelado: animación fuera YA
             app.dismiss_overlay = False

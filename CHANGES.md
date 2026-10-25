@@ -4,6 +4,55 @@ Fecha: 2026-07-10 · Acompañado del skill Impeccable (v4.5.0) para el diseño d
 
 Cada cambio incluye la validación concreta que lo confirmó.
 
+## v1.0.8 — 24 de octubre de 2026
+
+**Identidad nueva, panel React y reunión reconstruida.**
+
+**Identidad**
+- Marca **onda y cursor** (`dicta_icon.mark_wave_caret`): tres cápsulas en el
+  azul de acento que acaban en un cursor de texto. Sustituye a las cinco
+  propuestas anteriores, que se eliminaron con sus hojas de prueba.
+- `.ico` con **13 capas** (16, 20, 24, 28, 32, 36, 40, 48, 56, 64, 96, 128 y
+  256) para cubrir los escalados de Windows, y bandeja dibujada a
+  `SM_CXSMICON` y entregada 1:1: se quitó el doble reescalado que la veía
+  borrosa.
+- El nombre visible pasa a **Dicta** en títulos, bandeja y textos; las rutas y
+  los identificadores internos siguen en minúscula.
+
+**Panel (React)**
+- Selectores de una sola pieza: mismo ancho que el botón, sin corte al
+  desplegar, siempre hacia abajo con scroll y texto recortado con puntos
+  suspensivos. La línea divisoria va bajo el valor del botón, no bajo la
+  opción marcada.
+- Arreglado el salto de la ventana al abrir un desplegable: el hueco de la
+  barra pasó del `body` al shell, así que el documento ya no tiene recorrido.
+- Sección «Dictado» renombrada a **Ajuste** y subtítulo corregido.
+- Píldoras de valor centradas de verdad (medido: 5 px arriba y 5 abajo).
+
+**Reunión**
+- Tarjeta única y compacta, con controles de reproductor (pausa, detener y
+  cancelar en iconos) y sin pie.
+- Medidores Sistema y Micrófono en una fila: 32 rayas finas con rampa de seis
+  colores (verde → amarillo → rojo), alimentadas por los **dBFS reales**.
+- El micrófono ya captura: el «Asignador de sonido Microsoft» devolvía silencio
+  en WASAPI compartido y se usa el dispositivo predeterminado real; además los
+  bloques son de 50 ms (antes 250) y la caída es por tiempo, así el medidor se
+  mueve siempre.
+- Transcripción **completa** en el panel, con scroll, autoscroll y caja
+  redimensionable.
+- Corregido el cierre tras cancelar (`expected str... not NoneType`) y el panel
+  ya se refresca sin tener el foco.
+
+**Isla**
+- Onda de **16 barras reactivas a la voz** (amplitud y espectro), cuerpo sólido
+  blanco/negro y sin borde ni sombra.
+- Retirada la tarjeta flotante con el texto: la isla queda solo con la onda.
+
+**Limpieza**
+- Eliminados el panel clásico (`panel/index.html`, `app.js`, `style.css`), el
+  prototipo `assets/prediseno/` y los restos de plantilla del panel React.
+- `desktop.js` sigue siendo la barra de ventana integrada.
+
 ---
 
 ## 1. Grabación de reunión: ahora graba de verdad (sistema + micrófono)

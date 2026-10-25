@@ -30,7 +30,7 @@ está adjunto en la release.*
 
 ## Cómo se usa (sin instalar nada)
 
-1. Descarga **`dicta-portable-1.0.7-windows-x64.zip`** desde
+1. Descarga **`dicta-portable-1.0.8-windows-x64.zip`** desde
    [Releases](https://github.com/JDMoreu/dicta/releases/latest).
 2. Descomprímelo en una carpeta escribible (p. ej. `%LOCALAPPDATA%\Programs\dicta`).
 3. Ejecuta **`dicta.exe`** y acepta el aviso de administrador.
@@ -51,13 +51,13 @@ en `models\`, se descarga solo la primera vez desde HuggingFace.
   solo en el menú de la bandeja.
 - **Windows 11 esconde los iconos nuevos de la bandeja.** Si no ves el de Dicta
   junto al reloj: Configuración → Personalización → Barra de tareas → Otros
-  iconos de la bandeja del sistema → dicta.
+  iconos de la bandeja del sistema → Dicta.
 
 ## Ajustes (panel)
 
 Secciones **Dictado**, **Diccionario**, **Reunión**, **Audios y documentos**,
 **Atajos de teclado** y **Apariencia**. En el pie, el motor activo y la versión
-(`Actualizado · v1.0.7`).
+(`Actualizado · v1.0.8`).
 
 | Dictado: idioma, motor, modelo y micrófono | Reunión: grabando sistema + micrófono |
 |---|---|
@@ -138,9 +138,10 @@ panel necesita permisos de escritura.
 - `whisper-server` **ignora el flag `-l`** al arrancar: el idioma y el prompt
   viajan en cada petición, así que cambiar de idioma o el diccionario no reinicia
   nada.
-- Un solo símbolo recorre la app, **la onda de Dicta** (5 cápsulas con degradado
-  teal → azul → violeta), dibujada por una única función
-  (`dicta_icon.wave_mark`) para la isla, la bandeja y el icono.
+- Un solo lenguaje recorre la app: **la onda de la isla** (cápsulas con degradado
+  cian → azul → violeta) y **la marca del icono** —tres barras azules que
+  terminan en un cursor de texto—, dibujada por `dicta_icon` para la bandeja, el
+  icono de la ventana y el favicon.
 
 ## Requisitos
 

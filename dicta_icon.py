@@ -1,17 +1,30 @@
 #!/usr/bin/env python3
 """dicta_icon - identidad iconica de dicta.
 
-La marca del icono es **sobria y geometrica**, como el resto de la interfaz de
-la app: **un solo azul de acento**, formas simples, **trazo uniforme** y mucho
-espacio negativo. Nada de degradados arcoiris ni de piezas troceadas.
+La marca es **onda y cursor**: tres capsulas de voz en el azul de acento que
+terminan en un cursor de texto. La voz avanza de izquierda a derecha y acaba en
+el punto de insercion, que es exactamente lo que hace la app. Asimetrica a
+proposito: asi no se confunde con una onda generica.
 
-Azulejo (se conserva tal cual, es lo que funciona): **OPACO** en todas partes
---blanco puro #FFFFFF en tema claro, grafito #0E0F13 en oscuro-- con esquinas
-muy redondeadas y un **filo de luz** en lugar de un borde (mismo principio que
-el cuerpo de la isla). La marca se dibuja a 8x y se reduce (anti-alias limpio) y
-se recorta contra el azulejo, para que no asome por las esquinas redondeadas.
+El azulejo es **opaco** y sigue el tema --blanco puro #FFFFFF en claro, grafito
+#0A0A0A en oscuro-- con esquinas muy redondeadas y un **filo de luz** en lugar
+de un borde (el mismo principio que el cuerpo de la isla). La marca se dibuja a
+8x y se reduce (anti-alias limpio) y se recorta contra el azulejo, para que no
+asome por las esquinas redondeadas.
 
-API publica (NO cambiar estas firmas; dicta.py y el panel las llaman tal cual):
+El icono se **adapta a cada talla** (no es un unico PNG reescalado):
+
+* 16-27 px: geometria entera y sin supermuestreo, para que caiga en la rejilla
+  de pixeles y no se emborrone en la barra de tareas.
+* 28-47 px: barras y cursor mas gruesos y sin remates.
+* 48 px en adelante: cursor con remates (I-beam) y trazo mas fino.
+
+El .ico trae las tallas de los escalados de Windows (125 %, 150 %, 175 %,
+200 %): pedir una talla que no existe obliga al sistema a reescalar y ahi se
+pierde la nitidez.
+
+API publica (NO cambiar estas firmas; dicta.py, dicta_ui.py y el panel las
+llaman tal cual):
 
     render_icon(size, variant="app", theme="dark", bg=True)  -> PIL.Image RGBA
     official_image(size, theme="light")    # el render oficial (bandeja, .exe)
@@ -22,30 +35,20 @@ API publica (NO cambiar estas firmas; dicta.py y el panel las llaman tal cual):
     icon_mark(size, bars, light)                 # marca del icono (oficial)
     verify(path) / build_sheet(path)
 
-CUATRO PROPUESTAS. Cada una es su PROPIA funcion y dibuja un RGBA transparente
-de size x size con su marca; `render_mark(nombre, size, theme)` la compone
-sobre el azulejo. Para cambiar la oficial basta UNA linea: ``OFFICIAL_PROPOSAL``.
-
-    1) mark_d_solid   - D solida y minimalista con una onda fina integrada.
-    2) mark_d_stroke  - D de trazo uniforme y redondeado (solo contorno).
-    3) mark_wave_bars - onda de barras de alturas limpias, en un solo color.
-    4) mark_d_wave    - la inicial y la onda combinadas de forma geometrica.
-
-`build_proposal_sheets()` escribe en .tmp/ la hoja comparativa (las 4 propuestas
-a 16/32/64/128 px en claro y oscuro) y la hoja de detalle (cada una a 32 px
-ampliada).
+La isla conserva su propia onda (`wave_mark`): el icono es la version impresa
+de la misma idea, no el mismo dibujo.
 """
 
 import io
 import os
 
 import numpy as np
-from PIL import Image, ImageChops, ImageDraw, ImageFont
+from PIL import Image, ImageChops, ImageDraw
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 ICO_PATH = os.path.join(SCRIPT_DIR, "dicta.ico")
 
-_GRAPHITE = (14, 15, 19)          # #0E0F13
+_GRAPHITE = (10, 10, 10)          # #0A0A0A (un punto bajo --bg #141418)
 _WHITE = (255, 255, 255)
 _RIM_DARK = (255, 255, 255, 46)   # alfa medido: con 30 el azulejo desaparece
                                   # sobre una barra de tareas oscura
@@ -53,16 +56,16 @@ _RIM_LIGHT = (0, 0, 0, 34)
 
 # UN solo acento: el token --accent de DESIGN.md (claro #0066CC / oscuro #5B9DFF).
 # El azul de accion es el mismo en toda la app; en oscuro se aclara porque
-# #0066CC sobre grafito #0E0F13 no llega a contraste de grafico.
+# #0066CC sobre grafito #0A0A0A no llega a contraste de grafico.
 _ACCENT_LIGHT = (0, 102, 204)     # #0066CC
 _ACCENT_DARK = (91, 157, 255)     # #5B9DFF
 
-ICON_BARS = 5                     # barras de la onda (propuesta 3)
+ICON_BARS = 3                     # barras de la marca del icono
 
-# --- geometria del trazo de la letra -------------------------------------
-_D_SOLID = 0.26   # trazo grueso y uniforme: la D se lee como una masa solida
-_D_THIN = 0.140   # trazo fino y uniforme: contorno de la letra con aire
-_D_MED = 0.175    # trazo medio (inicial + onda)
+# Cursor de la marca: casi blanco en oscuro (el --text del tema) y casi negro
+# en claro.
+_CARET_DARK = (245, 245, 245)     # #F5F5F5
+_CARET_LIGHT = (10, 10, 10)       # #0A0A0A
 
 
 def _accent(light=False):
@@ -70,18 +73,9 @@ def _accent(light=False):
     return _ACCENT_LIGHT if light else _ACCENT_DARK
 
 
-def _d_geometry(size):
-    """(alto, ancho) de la marca como fraccion del lado del azulejo.
-
-    A tallas pequenas la marca ocupa mas: es lo unico que la hace legible a
-    16-20 px. A tallas grandes vuelve a una proporcion de letra (mas alta que
-    ancha) para dejar aire alrededor.
-    """
-    if size <= 20:
-        return 0.88, 0.84
-    if size <= 36:
-        return 0.82, 0.80
-    return 0.76, 0.78
+def _caret(light=False):
+    """El color del cursor del tema (claro #0A0A0A / oscuro #F5F5F5)."""
+    return _CARET_LIGHT if light else _CARET_DARK
 
 
 def _tile(size, theme, alpha=255, ss=8):
@@ -121,272 +115,133 @@ def _mark_from_mask(size, mask_fn, color):
     return out.resize((size, size), Image.LANCZOS)
 
 
-# --------------------------------------------------- el trazo de la letra D
-def _d_shape(big, mh, mw, tw, rw, stem_round=0.16):
-    """Mascara L del trazo de la D: cuenco (elipse) + tallo, menos la
-    contraforma.
-
-    El contorno exterior es un tallo recto (izquierda) unido a una elipse
-    (cuenco). La contraforma tiene **borde izquierdo recto** (el tallo) y
-    **derecho curvo** (media elipse): es la contraforma de una D, no la de una
-    O, y es lo que hace que la letra se lea como D a todas las tallas. Con
-    ``tw == rw`` el trazo es **uniforme**; el grosor del trazo se elige con ese
-    valor (fino = contorno, grueso = masa solida).
-    """
-    x0 = (big - mw) / 2.0
-    y0 = (big - mh) / 2.0
-    x1 = x0 + mw
-    y1 = y0 + mh
-    solid = Image.new("L", (big, big), 0)
-    ds = ImageDraw.Draw(solid)
-    ds.ellipse([x0, y0, x1, y1], fill=255)           # cuenco
-    rr = min(tw, mh) * stem_round                   # esquina exterior suave
-    ds.rounded_rectangle([x0, y0, x0 + tw, y1], radius=rr, fill=255)  # tallo
-
-    xl = x0 + tw
-    xr = x1 - rw
-    cy = (y0 + y1) / 2.0
-    ry = mh / 2.0 - tw
-    rx = (xr - xl) / 2.0
-    xc = xl + rx
-    counter = Image.new("L", (big, big), 0)
-    dc = ImageDraw.Draw(counter)
-    dc.rectangle([xl, cy - ry, xc, cy + ry], fill=255)          # borde recto
-    dc.ellipse([xc - rx, cy - ry, xc + rx, cy + ry], fill=255)  # curva derecha
-    return ImageChops.subtract(solid, counter)
+# ------------------------------------------------------------- la marca
+# Proporciones (fraccion del lado) para la rejilla entera de < 28 px.
+_CARET_BAR_H = (0.29, 0.53, 0.38)   # alturas de las 3 barras
+_CARET_H = 0.62                     # altura del cursor
+_CARET_GRID_MAX = 28                # por debajo: rejilla entera, sin reescalado
 
 
-def _sine_cut_mask(big, mh, amp=0.20, thick=0.115, periods=1.0):
-    """Mascara L de una **onda fina** horizontal (un seno) por el centro.
-
-    Es la onda de voz integrada en la letra: se resta del trazo y deja una
-    linea limpia que recorre la D. Al reducir, a 16 px desaparece sola y la
-    letra se sigue leyendo como una D solida (degrada con elegancia).
-    """
-    mask = Image.new("L", (big, big), 0)
-    d = ImageDraw.Draw(mask)
-    cy = big / 2.0
-    pts = []
-    steps = 96
-    for i in range(steps + 1):
-        t = i / float(steps)
-        pts.append((t * big, cy + np.sin(t * 2.0 * np.pi * periods) * mh * amp))
-    d.line(pts, fill=255, width=int(max(1, mh * thick)), joint="curve")
-    for p in (pts[0], pts[-1]):
-        r = max(1, int(mh * thick / 2.0))
-        d.ellipse([p[0] - r, p[1] - r, p[0] + r, p[1] + r], fill=255)
-    return mask
+def _snap(v, size):
+    """Entero con la misma paridad que ``size``: centra exacto en la rejilla."""
+    h = int(round(v))
+    if (int(size) - h) % 2:
+        h += 1
+    return max(h, 1 if int(size) % 2 else 2)
 
 
-# ------------------------------------------------------- propuesta 1
-def mark_d_solid(size, bars=ICON_BARS, light=False):
-    """**D solida y minimalista** con una onda fina integrada.
+def mark_wave_caret(size, bars=ICON_BARS, light=False):
+    """**Onda y cursor**: 3 barras de voz que terminan en un cursor de texto.
 
-    La letra es una masa solida de azul de acento (trazo grueso y uniforme) y
-    una onda fina del color del azulejo la recorre a media altura: la voz esta
-    *dentro* de la inicial, sin trocearla. A 16 px la onda desaparece y queda
-    una D nitida.
-    """
-    hf, wf = _d_geometry(size)
-    # Por debajo de 28 px la onda fina no tiene pixeles para leerse (se ve como
-    # una grieta): la letra se queda SOLIDA y nitida, que es lo que a esa talla
-    # pide una barra de tareas. De 28 px en adelante aparece la onda.
-    cut = int(size) >= 28
+    La onda va en el azul de acento y el cursor en el neutro del tema (casi
+    blanco en oscuro, casi negro en claro). La voz avanza de izquierda a derecha
+    y acaba en el punto de insercion, que es lo que hace la app. Asimetrica a
+    proposito: asi no se confunde con una onda generica.
 
-    def mask(big):
-        mh = big * hf
-        sw = mh * _D_SOLID
-        shape = _d_shape(big, mh, mh * wf, sw, sw)
-        if not cut:
-            return shape
-        return ImageChops.subtract(shape, _sine_cut_mask(big, mh))
-
-    return _mark_from_mask(size, mask, _accent(light))
-
-
-# ------------------------------------------------------- propuesta 2
-def mark_d_stroke(size, bars=ICON_BARS, light=False):
-    """**D de trazo uniforme y redondeado**.
-
-    Solo el contorno de la letra, con el mismo grosor en el tallo y en el
-    cuenco y las esquinas exteriores suavizadas. La contraforma queda grande:
-    mucho aire, cero ruido. Es la variante mas ligera y mas de sistema.
-    """
-    hf, wf = _d_geometry(size)
-
-    def mask(big):
-        mh = big * hf
-        sw = mh * _D_THIN
-        return _d_shape(big, mh, mh * wf, sw, sw, stem_round=0.45)
-
-    return _mark_from_mask(size, mask, _accent(light))
-
-
-# ------------------------------------------------------- propuesta 3
-def mark_wave_bars(size, bars=ICON_BARS, light=False):
-    """**Onda de barras de alturas limpias**, en un solo color.
-
-    Capsulas verticales de anchura y hueco uniformes, alturas simetricas
-    (perfil de coseno: la del centro manda) y un unico azul de acento. Es la
-    onda de la bandeja, sin degradado y sin el troceado de la marca anterior.
-    Por debajo de 40 px van 3 barras mas gruesas (con 5 no habria hueco) y por
-    debajo de 28 px la geometria es entera y sin reescalado, para que a 16 px
-    las barras caigan en la rejilla de pixeles y no se emborronen.
+    Tres geometrias, segun la talla: de 48 px en adelante el cursor lleva
+    remates (I-beam); de 28 a 47 px, barras y cursor mas gruesos y sin remates;
+    por debajo de 28 px, rejilla entera sin reescalado (anti-alias nulo).
+    ``bars`` se conserva por compatibilidad de firma.
     """
     size = int(size)
     if size <= 0:
         return Image.new("RGBA", (1, 1), (0, 0, 0, 0))
-    n = max(1, int(bars) if size >= 40 else 3)
-    col = _accent(light) + (255,)
-    if size < 28:
-        # Tallas de barra de tareas: geometria ENTERA y sin reescalado. El
-        # supermuestreo daria bordes suaves que, a 2 px de barra, embarran el
-        # hueco; aqui cada barra cae en la rejilla de pixeles y se ve nitida.
+
+    if size < _CARET_GRID_MAX:
+        acc = _accent(light) + (255,)
+        car = _caret(light) + (255,)
+        # Reparto continuo: la marca ocupa ~70 % del lado en TODAS las tallas.
+        # Antes cada pieza se redondeaba por su cuenta y a 20 px el conjunto se
+        # quedaba en el 55 % del azulejo (se veia pequeno y pobre).
+        unit = max(2.0, size * 0.70 / 5.5)
+        bw = max(2, int(round(unit)))
+        gap = max(1, int(round(unit * 0.55)))
+        cg = max(2, int(round(unit * 0.82)))
+        cw = max(1, int(round(unit * 0.55)))
+        total = 3 * bw + 2 * gap + cg + cw
+        x0 = (size - total) // 2
         img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
-        bw = max(1, int(round(size * 0.72 / (n + (n - 1) * 0.85))))
-        gap = max(1, int(round(bw * 0.85)))
-        total = n * bw + (n - 1) * gap
-        x0 = int(round((size - total) / 2.0))
-        cy = size / 2.0
-        maxh = size * 0.68
-        c = (n - 1) / 2.0
-        for i in range(n):
-            u = abs(i - c) / max(1.0, c)
-            hh = max(2, int(round(maxh * (0.45 + 0.55
-                                           * np.cos(u * np.pi / 2.0)))))
+        for i, f in enumerate(_CARET_BAR_H):
+            hh = _snap(size * f, size)
             x = x0 + i * (bw + gap)
-            top = int(round(cy - hh / 2.0))
-            d.rectangle([x, top, x + bw - 1, top + hh - 1], fill=col)
+            top = (size - hh) // 2
+            d.rectangle([x, top, x + bw - 1, top + hh - 1], fill=acc)
+        hc = _snap(size * _CARET_H, size)
+        xc = x0 + 3 * bw + 2 * gap + cg
+        top = (size - hc) // 2
+        d.rectangle([xc, top, xc + cw - 1, top + hc - 1], fill=car)
         return img
-    # De 28 px en adelante: como el resto de la marca, a 8x y se reduce
-    # (anti-alias limpio), y de 40 px en adelante 5 barras (a menos no hay
-    # hueco).
-    ss = 8 if size <= 96 else 4
-    big = size * ss
-    avail = big * 0.72
-    bw = avail / (n + (n - 1) * 0.85)
-    gap = bw * 0.85
-    total = n * bw + (n - 1) * gap
-    x0 = (big - total) / 2.0
-    cy = big / 2.0
-    maxh = big * 0.68
-    c = (n - 1) / 2.0
-    img = Image.new("RGBA", (big, big), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    for i in range(n):
-        u = abs(i - c) / max(1.0, c)
-        hh = maxh * (0.45 + 0.55 * np.cos(u * np.pi / 2.0))
-        x = x0 + i * (bw + gap)
-        top, bot = cy - hh / 2.0, cy + hh / 2.0
-        d.rounded_rectangle([x, top, x + bw - 1, bot],
-                            radius=(bw - 1) / 2.0, fill=col)
-    return img.resize((size, size), Image.LANCZOS)
+
+    full = size >= 48
+    if full:
+        xs, bw, hs = (30, 60, 90), 18, (48, 92, 64)
+        sx, sw = 134, 8
+    else:
+        xs, bw, hs = (29, 63, 97), 22, (52, 96, 68)
+        sx, sw = 139, 12
+
+    def bars_mask(big):
+        u = big / 180.0
+        m = Image.new("L", (big, big), 0)
+        d = ImageDraw.Draw(m)
+        for x, h in zip(xs, hs):
+            d.rounded_rectangle([x * u, (90 - h / 2.0) * u,
+                                 (x + bw) * u - 1, (90 + h / 2.0) * u - 1],
+                                radius=bw * u / 2.0, fill=255)
+        return m
+
+    def caret_mask(big):
+        u = big / 180.0
+        m = Image.new("L", (big, big), 0)
+        d = ImageDraw.Draw(m)
+        d.rounded_rectangle([sx * u, 34 * u, (sx + sw) * u - 1, 146 * u - 1],
+                            radius=sw * u / 2.0, fill=255)
+        if full:
+            for y in (34, 140):
+                d.rounded_rectangle([126 * u, y * u, 150 * u - 1,
+                                     (y + 6) * u - 1],
+                                    radius=3 * u, fill=255)
+        return m
+
+    wave = _mark_from_mask(size, bars_mask, _accent(light))
+    caret = _mark_from_mask(size, caret_mask, _caret(light))
+    return Image.alpha_composite(wave, caret)
 
 
-# ------------------------------------------------------- propuesta 4
-def mark_d_wave(size, bars=3, light=False):
-    """**La inicial y la onda, combinadas de forma geometrica**.
-
-    El contorno de la D (trazo uniforme, como la propuesta 2) con una onda de
-    3 barras **alojada dentro de la contraforma**: la misma anchura de trazo y
-    el mismo azul, alineada con la letra. La inicial enmarca la voz.
-    """
-    hf, wf = _d_geometry(size)
-    # A menos de 28 px las barras de dentro se fundirian con el trazo: la letra
-    # se queda sola (degrada a la propuesta 2, que es limpia a esa talla).
-    n = max(1, int(bars)) if int(size) >= 28 else 0
-
-    def mask(big):
-        mh = big * hf
-        mw = mh * wf
-        sw = mh * _D_MED
-        shape = _d_shape(big, mh, mw, sw, sw, stem_round=0.40)
-        if not n:
-            return shape
-        x0 = (big - mw) / 2.0
-        xl, xr = x0 + sw, x0 + mw - sw
-        cy = big / 2.0
-        ry = mh / 2.0 - sw
-        avail = (xr - xl) * 0.70
-        bw = max(1.0, avail / (n + (n - 1) * 0.8))
-        gap = bw * 0.8
-        total = n * bw + (n - 1) * gap
-        x = xl + ((xr - xl) - total) / 2.0
-        layer = Image.new("L", (big, big), 0)
-        dl = ImageDraw.Draw(layer)
-        c = (n - 1) / 2.0
-        for i in range(n):
-            u = abs(i - c) / max(1.0, c)
-            hh = 2.0 * ry * 0.62 * (0.45 + 0.55 * np.cos(u * np.pi / 2.0))
-            top = cy - hh / 2.0
-            if bw <= 2.2:
-                dl.rectangle([x, top, x + bw - 1, top + hh], fill=255)
-            else:
-                dl.rounded_rectangle([x, top, x + bw - 1, top + hh],
-                                     radius=(bw - 1) / 2.0, fill=255)
-            x += bw + gap
-        return ImageChops.lighter(shape, layer)
-
-    return _mark_from_mask(size, mask, _accent(light))
-
-
-# ------------------------------------------------------------ las propuestas
-PROPOSALS = {
-    "d_solid": mark_d_solid,
-    "d_stroke": mark_d_stroke,
-    "wave_bars": mark_wave_bars,
-    "d_wave": mark_d_wave,
-}
-PROPOSAL_ORDER = ("d_solid", "d_stroke", "wave_bars", "d_wave")
-
-# >>> cambiar la marca oficial es cambiar ESTA linea <<<
-OFFICIAL_PROPOSAL = "wave_bars"
-
-
-def icon_mark(size, bars=ICON_BARS, light=False):
-    """**La marca del icono** (la propuesta oficial) sobre lienzo transparente.
-
-    Devuelve un RGBA de ``size`` x ``size``. Es el MISMO dibujo en bandeja,
-    .ico, ventana del panel y favicon, porque todos salen de aqui.
-
-    ``bars`` se conserva por compatibilidad de firma (la onda de la propuesta 3
-    lo usa; las de letra lo ignoran).
-    """
-    return PROPOSALS[OFFICIAL_PROPOSAL](int(size), light=light)
-
-
-def render_mark(name, size, theme="dark"):
-    """Icono de UNA propuesta sobre el azulejo opaco.
-
-    Sirve para las hojas comparativas y para previsualizar una propuesta sin
-    tocar la oficial.
-    """
+def _compose(size, theme):
+    """La marca oficial sobre el azulejo del tema (lo que ve Windows)."""
     size = int(max(8, size))
     light = theme == "light"
     img = _tile(size, theme, alpha=255)
-    mark = PROPOSALS[name](size, light=light)
+    mark = mark_wave_caret(size, light=light)
+    # Recorte contra el azulejo: sin esto la marca asomaria por las esquinas.
     mark.putalpha(ImageChops.multiply(mark.split()[3], img.split()[3]))
     img.alpha_composite(mark, (0, 0))
     return img
 
 
+def icon_mark(size, bars=ICON_BARS, light=False):
+    """La marca del icono sobre lienzo transparente.
+
+    Devuelve un RGBA de ``size`` x ``size``. Es el MISMO dibujo en bandeja,
+    .ico, ventana del panel y favicon, porque todos salen de aqui.
+    """
+    return mark_wave_caret(int(size), light=light)
+
+
 def render_icon(size, variant="app", theme="dark", bg=True):
-    """Icono como PIL.Image RGBA del tamano pedido (la propuesta oficial).
+    """Icono como PIL.Image RGBA del tamano pedido (la marca oficial).
 
     ``variant`` y ``bg`` se conservan por compatibilidad de firma: el azulejo es
-    opaco (alfa 255) SIEMPRE --blanco puro en tema claro, grafito en oscuro--
-    asi que bandeja, .exe, ventana y favicon no pueden divergir.
-
-    La marca se **recorta contra el azulejo** (se multiplica su alfa por la del
-    azulejo): sin el recorte asomaria por las esquinas redondeadas.
+    opaco SIEMPRE --blanco puro en claro, grafito en oscuro-- asi que bandeja,
+    .exe, ventana y favicon no pueden divergir.
     """
-    return render_mark(OFFICIAL_PROPOSAL, size, theme)
+    return _compose(size, theme)
 
 
 def official_image(size, theme="light"):
-    """El render OFICIAL de dicta sobre el azulejo **opaco** (blanco puro en
-    claro), exactamente lo que dibuja la bandeja.
+    """El render OFICIAL de dicta sobre el azulejo opaco (blanco puro en claro).
 
     Es EL MISMO dibujo en la bandeja, el icono de la ventana/barra de tareas,
     la barra del panel y el favicon: todos llaman aqui (o a
@@ -414,8 +269,7 @@ def make_tray_image(size=64, theme=None):
 
 
 # ------------------------------------------------------- onda de la isla
-# Se conserva tal cual: la isla (y cualquier consumidor existente) sigue
-# obteniendo la misma onda ancha con degradado. El ICONO ya no la usa.
+# La isla conserva su onda ancha con degradado: es movimiento, no marca.
 _GRAD_DARK = ((61, 217, 196), (91, 157, 255), (155, 123, 255))
 _GRAD_LIGHT = ((12, 145, 126), (31, 127, 224), (109, 70, 214))
 
@@ -468,14 +322,18 @@ def wave_mark(size, bars=5, light=False, level=0.0, phase=0.0):
 
 
 # ------------------------------------------------------------------- .ico
-def write_ico(path=ICO_PATH, sizes=(16, 24, 32, 48, 64, 128, 256),
+def write_ico(path=ICO_PATH,
+              sizes=(16, 20, 24, 28, 32, 36, 40, 48, 56, 64, 96, 128, 256),
               theme="dark", variant="mark"):
     """Escribe el .ico multirresolucion, redibujando CADA tamano.
 
-    Se construye el contenedor a mano: el plugin ICO de Pillow no respeta una
-    lista de imagenes ya dibujadas (reducia todo al primer tamano), y aqui cada
-    talla tiene que dibujarse con su propia geometria. Formato ICO con PNG
-    embebido, que Windows Vista+ lee a cualquier tamano y conserva el alfa.
+    La lista cubre las tallas que piden Windows y sus escalados (125 %, 150 %,
+    175 %, 200 %): si la talla exacta no esta, el sistema reescala y el icono
+    sale borroso. Se construye el contenedor a mano: el plugin ICO de Pillow no
+    respeta una lista de imagenes ya dibujadas (reducia todo al primer tamano),
+    y aqui cada talla tiene que dibujarse con su propia geometria. Formato ICO
+    con PNG embebido, que Windows Vista+ lee a cualquier tamano y conserva el
+    alfa.
     """
     import struct
     frames = []
@@ -506,124 +364,25 @@ def verify(path=ICO_PATH):
 
 
 # --------------------------------------------------------------- hojas
-def _label_font(px):
-    for p in (r"C:/Windows/Fonts/segoeui.ttf", r"C:/Windows/Fonts/arial.ttf"):
-        try:
-            return ImageFont.truetype(p, px)
-        except Exception:                        # noqa: BLE001
-            pass
-    return ImageFont.load_default()
-
-
-def _paste(sheet, im, x, y, bg):
-    if im.mode != "RGBA":
-        im = im.convert("RGBA")
-    cell = Image.new("RGB", im.size, bg)
-    cell.paste(im, (0, 0), im)
-    sheet.paste(cell, (x, y))
-
-
-def build_comparativa(path=None):
-    """Hoja comparativa: una fila por propuesta y tema, con la marca a 16, 32,
-    64 y 128 px (ampliada por un factor entero con NEAREST, para juzgar la
-    legibilidad real; la de 128 va a tamano real, 1:1)."""
-    path = path or os.path.join(SCRIPT_DIR, ".tmp",
-                                "icon_propuestas_comparativa.png")
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    font, font_s = _label_font(15), _label_font(13)
-    sizes = (16, 32, 64, 128)
-    scale = {16: 6, 32: 4, 64: 2, 128: 1}
-    pad, label_w, header_h = 16, 330, 28
-    col_x, x = {}, label_w + pad
-    for s in sizes:
-        col_x[s] = x
-        x += s * scale[s] + pad
-    width = x
-    row_h = 128 + pad
-    rows = [(n, t) for n in PROPOSAL_ORDER for t in ("light", "dark")]
-    height = header_h + row_h * len(rows) + pad
-    sheet = Image.new("RGB", (width, height), (48, 48, 54))
-    d = ImageDraw.Draw(sheet)
-    d.text((pad, 6),
-           "dicta - propuestas de icono (azul de acento, azulejo opaco)",
-           fill=(255, 255, 255), font=font)
-    for s in sizes:
-        d.text((col_x[s] + 2, 6), "%dpx" % s, fill=(198, 198, 206), font=font_s)
-    y = header_h
-    for name, theme in rows:
-        bg = (242, 242, 245) if theme == "light" else (20, 20, 24)
-        d.rectangle([0, y, label_w - pad, y + row_h - pad], fill=(36, 36, 42))
-        d.text((pad, y + 30), "%d) %s" % (PROPOSAL_ORDER.index(name) + 1, name),
-               fill=(255, 255, 255), font=font)
-        d.text((pad, y + 54),
-               "tema %s%s" % ("claro" if theme == "light" else "oscuro",
-                              "  * OFICIAL" if name == OFFICIAL_PROPOSAL else ""),
-               fill=(150, 196, 255), font=font_s)
-        for s in sizes:
-            img = render_mark(name, s, theme)
-            if scale[s] != 1:
-                img = img.resize((s * scale[s], s * scale[s]), Image.NEAREST)
-            _paste(sheet, img, col_x[s], y + (row_h - pad - s * scale[s]) // 2,
-                   bg)
-        y += row_h
-    sheet.save(path)
-    return path
-
-
-def build_detalle(path=None):
-    """Hoja de detalle: cada propuesta a 32 px ampliada 10x (NEAREST), en claro
-    y en oscuro."""
-    path = path or os.path.join(SCRIPT_DIR, ".tmp",
-                                "icon_propuestas_detalle32.png")
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    font, small = _label_font(15), _label_font(13)
-    detail, zoom, pad, label_h = 32, 10, 20, 30
-    cs = detail * zoom
-    names = PROPOSAL_ORDER
-    themes = ("light", "dark")
-    width = pad + len(names) * (cs + pad)
-    height = label_h * 2 + pad + len(themes) * (label_h + cs + pad)
-    sheet = Image.new("RGB", (width, height), (48, 48, 54))
-    d = ImageDraw.Draw(sheet)
-    d.text((pad, 8), "dicta - detalle de cada propuesta a 32 px (x10)",
-           fill=(255, 255, 255), font=font)
-    for r, theme in enumerate(themes):
-        for c, name in enumerate(names):
-            x = pad + c * (cs + pad)
-            y = label_h * 2 + pad + r * (label_h + cs + pad)
-            bg = (242, 242, 245) if theme == "light" else (20, 20, 24)
-            d.text((x, y - label_h + 6),
-                   "%d) %s - %s" % (c + 1, name,
-                                    "claro" if theme == "light" else "oscuro"),
-                   fill=(255, 255, 255), font=small)
-            img = render_mark(name, detail, theme)
-            _paste(sheet, img.resize((cs, cs), Image.NEAREST), x, y, bg)
-    sheet.save(path)
-    return path
-
-
-def build_proposal_sheets():
-    """Escribe las dos hojas de .tmp/ y devuelve (comparativa, detalle)."""
-    return build_comparativa(), build_detalle()
-
-
 def build_sheet(path=None):
-    """Hoja de comprobacion de la marca OFICIAL: ampliado por tamano, los dos
-    temas, y a tamano real."""
+    """Hoja de comprobacion de la marca: ampliado por tamano, los dos temas y a
+    tamano real (1:1). Es lo que se revisa antes de tocar el .ico."""
     path = path or os.path.join(SCRIPT_DIR, "assets", "_icon_check.png")
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    zooms = (16, 24, 32, 48)
-    rows = [("oscuro", (24, 24, 28)), ("claro", (242, 242, 245))]
+    zooms = (16, 20, 24, 32, 48)
+    rows = [("dark", "oscuro", (24, 24, 28)),
+            ("light", "claro", (242, 242, 245))]
     pad, label_w, scale = 14, 92, 6
     cw = sum(s * scale + pad for s in zooms) + pad
     rh = max(zooms) * scale + pad * 2
-    real_w = sum(s + 12 for s in (16, 24, 32, 48, 64, 128)) + 32
+    real = (16, 20, 24, 28, 32, 40, 48, 64, 96, 128)
+    real_w = sum(s + 12 for s in real) + 32
     sheet = Image.new("RGB", (max(label_w + cw, label_w + real_w),
                               pad + rh * len(rows) + 96), (128, 128, 132))
     d = ImageDraw.Draw(sheet)
     y = pad
-    for theme, bgc in rows:
-        d.text((pad, y + 4), theme, fill=(255, 255, 255))
+    for theme, label, bgc in rows:
+        d.text((pad, y + 4), label, fill=(255, 255, 255))
         x = label_w
         for s in zooms:
             cell = Image.new("RGB", (s * scale, s * scale), bgc)
@@ -635,7 +394,7 @@ def build_sheet(path=None):
         y += rh
     d.text((pad, y + 12), "real", fill=(255, 255, 255))
     x = label_w
-    for s in (16, 24, 32, 48, 64, 128):
+    for s in real:
         ic = ico_render(s, theme="dark")
         cell = Image.new("RGB", (s + 8, s + 8), (60, 60, 66))
         cell.paste(ic, (4, 4), ic)
@@ -649,17 +408,14 @@ if __name__ == "__main__":
     import hashlib
     out = write_ico()
     sizes, allsquare = verify(out)
-    print("oficial:", OFFICIAL_PROPOSAL)
+    print("marca: onda y cursor (mark_wave_caret)")
     print("escrito:", out)
     print("tamanos en el .ico:", sizes, "| todos cuadrados:", allsquare)
-    comp, det = build_proposal_sheets()
-    print("comparativa:", comp)
-    print("detalle:", det)
     print("hoja oficial:", build_sheet())
-    for name in PROPOSAL_ORDER:
-        print("-- %s" % name)
-        for s in (16, 20, 32, 64, 128):
-            a = np.asarray(render_mark(name, s, "dark"))
+    for s in (16, 24, 32, 48, 64, 128, 256):
+        for theme in ("dark", "light"):
+            a = np.asarray(ico_render(s, theme=theme))
             op = int((a[:, :, 3] > 200).sum())
             h = hashlib.sha1(a.tobytes()).hexdigest()[:8]
-            print("  %3dpx  sha=%s opacos=%6d/%d" % (s, h, op, s * s))
+            print("  %3dpx %-5s sha=%s opacos=%6d/%d"
+                  % (s, theme, h, op, s * s))

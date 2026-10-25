@@ -37,3 +37,9 @@ whisper_cuda/
 Thumbs.db
 desktop.ini
 .DS_Store
+
+# Cachés de herramientas de agentes (no son del producto)
+.agents/
+.impeccable/
+.playwright-mcp/
+skills-lock.json

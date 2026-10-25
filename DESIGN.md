@@ -1,6 +1,6 @@
-# DESIGN.md — dicta
+# DESIGN.md — Dicta
 
-Sistema visual de dicta. Un solo acento recorre la app: **azul de acción**.
+Sistema visual de Dicta. Un solo acento recorre la app: **azul de acción**.
 La onda de voz usa la misma familia (frío al escuchar, cálido al procesar).
 Principio: **sólido, sin bordes, minimal**. La forma se delimita con luz, no
 con trazos.
@@ -71,10 +71,12 @@ Reglas de render (`dicta_ui.render_notch_rgba`):
 
 - Panel HTML/CSS (Chrome en modo aplicación, sin barra nativa del sistema: se
   elimina `WS_CAPTION` y se refuerza en cada tick).
-- **Interruptor claro/oscuro en la barra superior** (sol ↔ luna, deslizante),
-  no una tarjeta de ajustes; en Apariencia está el mismo ajuste segmentado.
-- **Raíl de siete secciones** (Dictado, Diccionario, Reunión, Audios,
-  Documentos, Atajos de teclado, Apariencia) con el recuento de cada lista, y
+- **Sin cabecera con marca**: el panel empieza DIRECTAMENTE en el raíl (el
+  icono de la marca vive solo donde toca: ventana, bandeja y `.exe`). El tema
+  se elige en Apariencia, en el segmentado claro/oscuro de la fila «Claro u
+  oscuro» (sol ↔ luna, dos iconos y un pulgar deslizante).
+- **Raíl de seis secciones** (Dictado, Diccionario, Reunión, Audios y
+  documentos, Atajos de teclado, Apariencia) con el recuento de cada lista, y
   **filas agrupadas** dentro: azulejo de icono + título + ayuda, control a la
   derecha. Antes era una rejilla de tarjetas, y ocho bloques de «título + un
   control + aire» era justo lo que la hacía genérica: misma información, la
@@ -123,14 +125,22 @@ secundario en tema claro lleva filo: su relleno está a 1,19:1 del fondo.
 
 ## Icono
 
-Un único símbolo (`dicta_icon.wave_mark`) para la isla, la bandeja y el `.exe`.
-Azulejo de grafito con esquinas muy redondeadas y filo de luz; dentro, la onda
-con el degradado de 3 paradas. **Cada talla se redibuja**: 5 barras desde 40 px
-y 3 más gruesas por debajo (a 32 px, cinco barras de 1 px se funden en una
-mancha). El filo del azulejo va a alpha 46 en oscuro: con 30 el azulejo
-desaparece sobre una barra de tareas oscura. El azulejo es **translúcido**
-(alpha 165) en todas partes —bandeja, `.exe`, ventana del panel y accesos
-directos—: es el mismo dibujo, así que no pueden divergir.
+La marca es **onda y cursor** (`dicta_icon.mark_wave_caret`): tres cápsulas de
+voz en el azul de acento que terminan en un cursor de texto —la voz avanza hacia
+el punto de inserción, que es lo que hace la app—. El cursor va en el neutro del
+tema (`#F5F5F5` en oscuro, `#0A0A0A` en claro). Es asimétrica a propósito: así no
+se lee como una onda genérica.
+
+**Cada talla se redibuja**: por debajo de 28 px la geometría es entera y sin
+reescalado, para que caiga en la rejilla de píxeles de la barra de tareas; de 28
+a 47 px las barras y el cursor van más gruesos y sin remates; desde 48 px el
+cursor lleva remates (I-beam). El `.ico` trae las tallas de los escalados de
+Windows (16, 20, 24, 28, 32, 36, 40, 48, 56, 64, 96, 128 y 256) y la bandeja se
+dibuja a `SM_CXSMICON` y se entrega 1:1: sin tallas exactas el sistema reescala
+y el icono pierde nitidez. El azulejo es **opaco** —blanco puro en claro,
+grafito `#0A0A0A` en oscuro, con filo de luz— y el mismo dibujo sirve a bandeja,
+`.exe`, ventana del panel y favicon: no pueden divergir. La isla conserva
+`dicta_icon.wave_mark` (su onda con degradado es movimiento, no marca).
 
 
 ## Referencias

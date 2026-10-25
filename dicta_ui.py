@@ -43,11 +43,12 @@ _LayeredBase = _shell.LayeredWindow if _shell is not None else object
 
 MODEL_NAMES = ("tiny", "base", "small", "medium", "turbo")
 _TRAY_FILTER_PATCHED = False
+_TRAY_SIZE_PATCHED = False
 
 # Cuerpo de la isla: SEMITRANSPARENTE (cristal esmerilado, el fondo se ve
 # Cuerpo de la isla: SÓLIDO en ambos temas (sin transparencia).
 # Grafito y blanco unificados con la superficie de la tarjeta (misma familia).
-_ISLAND_BODY = (0.055, 0.059, 0.075)     # #0E0F13 (grafito)
+_ISLAND_BODY = (0.000, 0.000, 0.000)     # negro sólido (tema oscuro)
 _ISLAND_BODY_LIGHT = (1.000, 1.000, 1.000)   # blanco sólido
 _CARD_TEXT = "#f5f5f7"
 _CARD_TEXT_LIGHT = "#1b2330"
@@ -134,18 +135,17 @@ def _palette():
     return PALETTES.get(_PALETTE["name"], PALETTES["grafito"])
 
 
-# Geometría de la isla: colgando del borde SUPERIOR (arriba recto, abajo
-# SUPERIOR (área de trabajo), tamaño fijo y onda centrada.
-ISLAND_H = 36
-ISLAND_RADIUS = 18
-ISLAND_PAD = 16
-ISLAND_SHADOW = 9              # margen de la ventana para la sombra (px)
-ISLAND_SHADOW_A = 0.0          # sin sombra (el autor la quitó)
-ISLAND_SHADOW_A_LIGHT = 0.0    # sin sombra (el autor la quitó)
-_ISLAND_SHADOW = (0.02, 0.02, 0.03)        # sombra: oscura, no un halo claro
-_ISLAND_SHADOW_LIGHT = (0.05, 0.05, 0.07)
-ISLAND_WAVE_W = 96              # 9 cápsulas: 6 de ancho con 5 de hueco
-ISLAND_N_BARS = 9
+# Geometría de la isla: misma proporción que la preview de Apariencia
+# (216×32, 8 barras finas) para que el ajuste y la isla real no diverjan.
+ISLAND_H = 32
+ISLAND_RADIUS = 16
+ISLAND_W = 128
+ISLAND_SHADOW = 2              # margen mínimo para el AA del canto (px)
+# Opacidad del cuerpo de la isla. 0.0 = solo la onda (sin píldora); 1.0 = la
+# píldora de cristal. Se deja como constante para poder comparar de un vistazo.
+ISLAND_BODY_OPACITY = 1.0      # 1.0 = píldora opaca; 0.0 = solo la onda
+ISLAND_WAVE_W = 96              # 16 cápsulas de 3 px con 3 de hueco
+ISLAND_N_BARS = 16
 # Forma: True = colgando del borde superior (arriba recto, abajo redondeado);
 # False = píldora flotante con las cuatro esquinas redondas. Ahora depende de
 # la POSICIÓN elegida (`island_pos`): arriba cuelga del borde (arriba recto),
@@ -204,15 +204,16 @@ def _sd_box(x, y, cx, cy, hw, hh):
 _SCENE = {}          # geometría estática cacheada por tamaño (w, h, radius)
 
 
-def _scene(w, h, radius, bw=None, bh=None):
+def _scene(w, h, radius, bw=None, bh=None, body_top=0.0):
     """Rejilla, SDF y máscara del cuerpo: constantes en cada fotograma.
 
     La rampa de anti-alias se escala con el DPI: 1 px LÓGICO, no 1 px físico.
-    A 200 % un borde de 1 px físico se ve escalonado; con 2 px se ve liso."""
+    A 200 % un borde de 1 px físico se ve escalonado; con 2 px se ve liso.
+    ``body_top`` deja margen arriba para el halo cuando la isla flota abajo."""
     bw = float(bw if bw else w)
     bh = float(bh if bh else h)
     at_top = _square_top()
-    key = (w, h, radius, bw, bh, at_top)
+    key = (w, h, radius, bw, bh, at_top, float(body_top))
     sc = _SCENE.get(key)
     if sc is None:
         ys, xs = np.mgrid[0:h, 0:w].astype(np.float32)
@@ -220,10 +221,10 @@ def _scene(w, h, radius, bw=None, bh=None):
         # Coordenadas DENTRO del cuerpo: el fotograma tiene margen para la
         # sombra en el lado CONTRARIO al borde de la pantalla. Arriba: el cuerpo
         # va pegado al borde superior del fotograma y el margen queda abajo.
-        # Abajo: se voltea — el cuerpo pegado al borde inferior del fotograma y
-        # el margen arriba (si no, la sombra saldría del lado equivocado).
+        # Abajo: el cuerpo lleva margen arriba y abajo para que el halo rodee
+        # también el canto superior (la isla ya no nace del borde).
         xv = x - (w - bw) / 2.0
-        yv = y                                 # el cuerpo siempre arriba del fotograma
+        yv = y - float(body_top)
         r = float(radius)
         if at_top:
             # Colgando del borde: esquinas de arriba rectas (el cuerpo nace del
@@ -243,26 +244,42 @@ def _scene(w, h, radius, bw=None, bh=None):
         else:
             d_shape = _sd_box(xv, yv, bw / 2.0, bh / 2.0,
                               bw / 2.0 - r, bh / 2.0 - r) - r
-        ramp = max(1.0, r / 17.0)              # ≈ escala DPI (ISLAND_RADIUS=17)
+        ramp = max(1.0, r / 16.0)              # ≈ escala DPI (ISLAND_RADIUS=16)
         mask = np.clip((0.5 * ramp - d_shape) / ramp, 0.0, 1.0)
         _SCENE.clear()
         _SCENE[key] = sc = {"x": x, "y": y, "xs": xs, "mask": mask, "d": d_shape,
-                            "ramp": ramp, "body_top": 0.0}
+                            "ramp": ramp, "body_top": float(body_top)}
     return sc
+
+
+def _vivid_grad(grad, sat=1.24, gain=1.06):
+    """Sube saturación y brillo de las paradas de la onda.
+
+    Con el cristal translúcido el fondo entra en la píldora, así que la onda
+    necesita más croma para separarse de él y verse viva."""
+    out = []
+    for c in grad:
+        a = np.asarray(c, np.float32)
+        lum = float(a @ np.asarray([0.2126, 0.7152, 0.0722], np.float32))
+        v = lum + (a - lum) * sat
+        out.append(tuple(np.clip(v * gain, 0.0, 1.0).tolist()))
+    return tuple(out)
 
 
 def render_island_rgba(w, h, wave, wave_w, radius, grad, light, phase=0.0,
                        body_w=None, body_h=None, body_dark=None,
-                       body_light=None):
+                       body_light=None, body_top=0.0):
     """Un fotograma de la isla en BGRA premultiplicada (h, w, 4) uint8.
 
-    Geometría cacheada y un único composite de las 9 cápsulas. El cuerpo es
-    SÓLIDO en ambos temas, sin bordes y sin efectos 3D: se modela con un
-    subtrazo interior muy tenue. La onda es plana y limpia (color + una luz
-    vertical sutil) con un glow aditivo ACOTADO. La rampa de anti-alias se
-    escala con el DPI para que los bordes no se vean escalonados. El color del
-    cuerpo lo puede fijar la paleta (`body_dark`/`body_light`)."""
-    sc = _scene(w, h, radius, body_w, body_h)
+    Geometría cacheada y un único composite de las 8 cápsulas. El cuerpo es
+    SÓLIDO en ambos temas, sin bordes ni efectos 3D: se modela con un subtrazo
+    interior muy tenue. La onda es plana y limpia (color + una luz vertical
+    sutil). Fuera del cuerpo va un halo monocromo muy sutil: sombra oscura en
+    tema claro y luz blanca en oscuro, para separarse de fondos del mismo color.
+    La rampa de anti-alias se escala con el DPI para que los bordes no se vean
+    escalonados. El color del cuerpo lo puede fijar la paleta
+    (`body_dark`/`body_light`)."""
+    sc = _scene(w, h, radius, body_w, body_h, body_top)
     bw = float(body_w if body_w else w)
     bh = float(body_h if body_h else h)
     x, y, mask, d_shape = sc["x"], sc["y"], sc["mask"], sc["d"]
@@ -275,22 +292,24 @@ def render_island_rgba(w, h, wave, wave_w, radius, grad, light, phase=0.0,
         body_rgb = body_dark if body_dark is not None else _ISLAND_BODY
     body = np.asarray(body_rgb, np.float32)
     out_c = np.empty((h, w, 3), np.float32)
+    # La máscara geométrica se usa para RECORTAR la onda (siempre), pero el
+    # cuerpo se pinta con su propia opacidad: con 0 solo quedan las barras.
+    body_a = mask * float(ISLAND_BODY_OPACITY)
     # Premultiplicado desde el principio: fuera del cuerpo no puede quedar su
-    # color con alfa 0, porque cualquier cosa que se componga encima (la sombra)
-    # se mezclaría con él. En tema claro eso hacía que la sombra saliera clara.
-    out_c[:] = body * mask[..., None]
-    out_a = mask.copy()
+    # color con alfa 0, porque cualquier cosa que se componga encima se
+    # mezclaría con él.
+    out_c[:] = body * body_a[..., None]
+    out_a = body_a.copy()
 
     n = len(wave)
     if n:
         pad = max((bw - wave_w) / 2.0, 4.0) + (w - bw) / 2.0
         slot = wave_w / n
-        bw = slot * 0.58
-        bh_min = bw                            # silencio = punto redondo
+        bw = slot * 0.5                        # 3 px de barra + 3 de hueco
+        bh_min = max(2.0, bw * 0.55)           # silencio = punto pequeño
         cy = body_top + bh / 2.0
-        max_h = bh - max(6.0, bh * 0.22)
-        sigma = max(bh, 1.0) * 0.35
-        span = bw / 2.0 + sigma * 2.5
+        max_h = bh - max(3.0, bh * 0.10)
+        span = bw / 2.0
         x0 = max(int(pad - span), 0)
         x1 = min(int(pad + wave_w + span) + 1, w)
         sx = x1 - x0
@@ -301,7 +320,7 @@ def render_island_rgba(w, h, wave, wave_w, radius, grad, light, phase=0.0,
         sl = (slice(None), slice(x0, x1))
 
         # Campo de color continuo a lo ancho de la onda (3 paradas). Al cubrir
-        # TODAS las columnas, el glow y el eco nunca leen color sin definir.
+        # TODAS las columnas, ninguna barra lee color sin definir.
         a0, a1, a2 = (np.asarray(c, np.float32) for c in grad)
         tt = np.clip((wl - pad) / max(wave_w, 1e-6), 0.0, 1.0)[..., None]
         colf = np.where(tt < 0.5, a0 + (a1 - a0) * (tt / 0.5),
@@ -309,7 +328,6 @@ def render_island_rgba(w, h, wave, wave_w, radius, grad, light, phase=0.0,
 
         cov_all = np.zeros((h, sx), np.float32)
         illum = np.zeros((h, sx), np.float32)
-        halo = np.zeros((h, sx), np.float32)
         for i, lvl in enumerate(wave):
             lvl = float(min(1.0, max(0.0, lvl)))
             bh = bh_min + (max_h - bh_min) * lvl
@@ -326,24 +344,16 @@ def render_island_rgba(w, h, wave, wave_w, radius, grad, light, phase=0.0,
             cov = mask_s * np.clip((0.5 * ramp - dist) / ramp, 0.0, 1.0)
             cov_all = np.maximum(cov_all, cov)
 
-            # Halo por polinomio (≈ exp a ±0.08) en vez de np.exp.
-            t = np.clip(1.0 - np.maximum(dist, 0.0) / (3.0 * sigma), 0.0, 1.0)
-            halo += (t * t) * (1.0 - halo)      # unión: nunca satura
-
             # Luz PLANA y sutil (sin gloss/rim 3D): algo más claro arriba.
             vn_y = (cy - ycol) / (0.5 * bh)
             key = np.clip(0.5 + 0.5 * vn_y, 0.0, 1.0)[:, None]
             lit = 0.82 + 0.18 * key
             illum = np.maximum(illum, cov * lit)
 
-        # Un solo composite para las nueve cápsulas.
+        # Un solo composite para las ocho cápsulas.
         a = cov_all[..., None]
         out_c[sl] = colf * illum[..., None] + out_c[sl] * (1.0 - a)
         out_a[sl] = cov_all + out_a[sl] * (1.0 - cov_all)
-
-        # Glow aditivo acotado y discreto.
-        gmax = 0.075 if light else 0.055
-        out_c[sl] += np.minimum(gmax, 0.08 * halo)[..., None] * colf
 
     # Cuerpo sin bordes: subtrazo interior superior + viñeta inferior (horneados).
     plate = sc.get("plate_l" if light else "plate_d")
@@ -357,37 +367,12 @@ def render_island_rgba(w, h, wave, wave_w, radius, grad, light, phase=0.0,
         plate = (sheen_pl, vy * vx * mask)
         sc["plate_l" if light else "plate_d"] = plate
     sheen_pl, vig = plate
-    out_c += (sheen_pl * (0.06 if light else 0.07))[..., None]
-    out_c *= (1.0 - (0.02 if light else 0.12) * vig)[..., None]
+    out_c += (sheen_pl * (0.06 if light else 0.0))[..., None]
+    out_c *= (1.0 - (0.02 if light else 0.0) * vig)[..., None]
 
-    # Sombra suave de separación: fuera del cuerpo, de los lados y por abajo.
-    # Arriba no hay (la isla nace del borde de la pantalla). El SDF la hace caer
-    # con la distancia, así que no es una línea: un halo que se apaga.
-    borde_sh = ISLAND_SHADOW * ramp
-    # OJO: `clip(d, 0, borde)` vale lo mismo en el canto y DENTRO del cuerpo, así
-    # que sin esta máscara la sombra se pinta también encima de la isla y se come
-    # la onda (pasó: 40 % sobre todo el cuerpo).
-    fuera = (d_shape > 0.0).astype(np.float32)
-    t = np.clip(d_shape, 0.0, borde_sh) / borde_sh
-    # Perfil smoothstep: entra y sale sin escalones (con una potencia se veían
-    # bandas, que es justo lo que hace que parezca barato).
-    perfil = 1.0 - t * t * (3.0 - 2.0 * t)
-    # Pesa más abajo: una sombra de elevación no es simétrica. Arriba queda el
-    # 55 %, abajo el 100 %.
-    # Peso hacia ABAJO siempre (una sombra no se proyecta hacia arriba): arriba
-    # pesa más abajo del pil y en la posición de abajo también, así no aparece
-    # ningún manchón por encima.
-    yrel = (y - body_top) / bh
-    ynorm = np.clip(yrel, 0.0, 1.0)
-    peso = 0.55 + 0.45 * ynorm
-    tope = (ISLAND_SHADOW_A_LIGHT if light else ISLAND_SHADOW_A)
-    sh = perfil * peso * tope * fuera
-    if sh.max() > 0.002:
-        col_sh = np.asarray(_ISLAND_SHADOW_LIGHT if light else _ISLAND_SHADOW,
-                            np.float32)
-        sbb = sh[..., None]
-        out_c = col_sh * sbb + out_c * (1.0 - sbb)
-        out_a = sh + out_a * (1.0 - sh)
+    # Sin borde ni sombra: el contraste lo da el propio cristal (el cuerpo
+    # enseña el fondo desenfocado), así que aquí no se pinta nada fuera.
+
 
     # Invariante de premultiplicado: nunca color > alfa (evita motas brillantes).
     out_c = np.minimum(out_c, out_a[..., None])
@@ -422,19 +407,66 @@ def _patch_optional_tray_filter():
     _TRAY_FILTER_PATCHED = True
 
 
-def make_tray_image(size=64):
-    """Icono de la bandeja: renderizador nuevo si está, si no el de respaldo.
+def _tray_px():
+    """Lado real del icono de la bandeja en pixeles fisicos (SM_CXSMICON)."""
+    if os.name != "nt":
+        return 16
+    try:
+        import ctypes
+        px = int(ctypes.windll.user32.GetSystemMetrics(49))   # SM_CXSMICON
+        return px if px >= 8 else 16
+    except Exception:
+        return 16
 
-    ``dicta_icon.render_icon(size, variant="mark", bg=False)`` es la marca de
-    la identidad (la misma onda que la isla). Si el módulo no existe todavía
-    o falla al renderizar, se cae al dibujo propio sin romper nada: el icono
-    de bandeja no puede ser un requisito para que dicta arranque.
+
+def _patch_tray_icon_size():
+    """Entrega a Windows el icono a la talla EXACTA de la bandeja.
+
+    pystray carga el icono con ``LR_DEFAULTSIZE`` (32 px) y luego la bandeja lo
+    reescala a su talla real (16/20/24/28/32): dos remuestreos que emborronan
+    la marca. Aqui se carga con la talla de ``SM_CXSMICON`` y sin reescalado.
+    Si algo falla, se cae al comportamiento original de pystray.
     """
-    size = int(size)
+    global _TRAY_SIZE_PATCHED
+    if _TRAY_SIZE_PATCHED or os.name != "nt":
+        return
+    try:
+        import pystray._win32 as backend
+        api = backend.win32
+    except Exception:
+        return
+    original = backend.Icon._assert_icon_handle
+
+    def assert_icon_handle(icon):
+        if icon._icon_handle:
+            return
+        try:
+            px = _tray_px()
+            with backend.serialized_image(icon.icon, "ICO") as path:
+                icon._icon_handle = api.LoadImage(
+                    None, path, api.IMAGE_ICON, px, px, api.LR_LOADFROMFILE)
+        except Exception:
+            original(icon)
+
+    backend.Icon._assert_icon_handle = assert_icon_handle
+    _TRAY_SIZE_PATCHED = True
+
+
+def make_tray_image(size=None):
+    """Icono de la bandeja, a la talla que pinta Windows.
+
+    ``size=None`` usa ``SM_CXSMICON`` (16/20/24/28/32 segun el escalado): se
+    dibuja a esa talla y se entrega sin reescalar, que es lo que lo mantiene
+    nitido. ``dicta_icon.render_icon`` es la marca de la identidad; si el
+    modulo no existe todavia o falla al renderizar, se cae al dibujo propio
+    sin romper nada: el icono de bandeja no puede ser un requisito para que
+    dicta arranque.
+    """
+    size = _tray_px() if size is None else int(size)
     try:
         import dicta_icon
-        # El degradado y el halo tienen que seguir el tema: en una barra de
-        # tareas CLARA, el degradado del tema oscuro se queda en ~1,6:1.
+        # El azulejo sigue el tema (blanco en claro, grafito en oscuro): se
+        # pide el tema para que la bandeja no muestre el icono del otro.
         img = dicta_icon.render_icon(
             size, variant="mark", bg=False,
             theme=("light" if _is_light() else "dark"))
@@ -544,11 +576,12 @@ class Tray:
 
     def start(self):
         _patch_optional_tray_filter()
+        _patch_tray_icon_size()
 
         def run():
             try:
                 self.icon = pystray.Icon("dicta", make_tray_image(),
-                                         "dicta — dictado por voz", self._menu())
+                                         "Dicta — dictado por voz", self._menu())
                 self.icon.run()
             except Exception as e:
                 print(f"dicta tray error: {e!r}", flush=True)
@@ -660,7 +693,10 @@ class IslandWindow(_LayeredBase):
                                + dt / 0.45)
         else:
             ov._cancel_active = False
-        target_lvl = min(1.0, max(0.0, (float(ov._rms) / 0.035) ** 0.65))
+        # Rango dinámico: la referencia baja (0,020) para que el habla normal
+        # sature, y el exponente 0,85 mantiene el silencio realmente bajo. Sin
+        # esto la voz se quedaba a media altura y la onda parecía plana.
+        target_lvl = min(1.0, max(0.0, (float(ov._rms) / 0.020) ** 0.85))
         tau = 0.045 if target_lvl > ov._level else 0.20
         ov._level += (target_lvl - ov._level) * (1.0 - np.exp(-dt / tau))
         ov._phase += dt * (1.8 if busy else 2.4 + 2.8 * ov._level)
@@ -674,9 +710,11 @@ class IslandWindow(_LayeredBase):
             grad = pal["listen_l"] if light else pal["listen"]
         wave = ov._wave_shape()
         return render_island_rgba(self.w, self.h, wave, ov._island_w_px(),
-                                 self.radius, grad, light, ov._phase,
-                                 ov.BODY_W, ov.BODY_H,
-                                 body_dark=pal["body"], body_light=pal["body_l"])
+                                 self.radius, _vivid_grad(grad), light,
+                                 ov._phase, ov.BODY_W, ov.BODY_H,
+                                 body_dark=_ISLAND_BODY,
+                                 body_light=_ISLAND_BODY_LIGHT,
+                                 body_top=ov.BODY_TOP)
 
 
 class VoiceOverlay:
@@ -700,16 +738,16 @@ class VoiceOverlay:
         except Exception:
             _DPI["scale"] = 1.0
         s = self.s = _DPI["scale"]
-        self.SH = round(ISLAND_SHADOW * s)       # margen para la sombra
+        self.SH = round(ISLAND_SHADOW * s)       # margen para el halo
         self.BODY_H = round(ISLAND_H * s)        # alto del cuerpo
         self.R = round(ISLAND_RADIUS * s)
-        self.PAD = round(ISLAND_PAD * s)
         self.WW = round(ISLAND_WAVE_W * s)
-        self.BODY_W = self.PAD * 2 + self.WW     # ancho del cuerpo
+        self.BODY_W = round(ISLAND_W * s)        # mismo ancho que la preview
         # La ventana lleva el cuerpo + el margen de la sombra (a los lados y
         # por abajo; por arriba no, que nace del borde de la pantalla).
         self.W = self.BODY_W + self.SH * 2
         self.H = self.BODY_H + self.SH
+        self.BODY_TOP = 0               # margen arriba (solo en la posición inferior)
 
         # La muesca es una ventana nativa con alpha por píxel: cristal
         # semitransparente de verdad y bordes redondos con AA analítico.
@@ -752,7 +790,7 @@ class VoiceOverlay:
         """Tono de la tarjeta de transcripción según el tema (unificado con
         el cuerpo de la isla: grafito #0E0F13 / blanco)."""
         light = _is_light()
-        bg = "#ffffff" if light else "#0e0f13"
+        bg = "#ffffff" if light else "#000000"
         fg = _CARD_TEXT_LIGHT if light else _CARD_TEXT
         self.panel.configure(bg=bg)
         self.panel_label.configure(bg=bg, fg=fg)
@@ -787,9 +825,13 @@ class VoiceOverlay:
         self._state = state
         self._text = text or ""
         try:
+            at_top = _at_top()
+            self.BODY_TOP = 0 if at_top else self.SH
+            self.H = self.BODY_H + self.SH + self.BODY_TOP
             sw = self.panel.winfo_screenwidth()
             self._island_x = (sw - self.W) // 2
-            self._island_y = self._top_y() if _at_top() else self._bottom_y()
+            self._island_y = (self._top_y() if at_top
+                              else self._bottom_y() - self.BODY_TOP)
             if not self._visible:
                 self._visible = True
                 self._phase = 0.0
@@ -833,8 +875,9 @@ class VoiceOverlay:
         """Y de la isla: píldora flotante sobre el borde INFERIOR del área de
         trabajo, separada ~10 px (ISLAND_BOTTOM_GAP). Se mide sobre el área de
         trabajo real (SPI_GETWORKAREA), así respeta una barra de tareas abajo.
-        El cuerpo va pegado al borde INFERIOR del fotograma, de modo que la
-        ventana mide lo mismo que arriba pero el ancla se calcula desde abajo."""
+        El cuerpo flota con margen arriba y abajo, así el halo rodea todos
+        los bordes; `show` descuenta `BODY_TOP` para dejar el cuerpo en la
+        misma altura y la tarjeta crece hacia arriba."""
         gap = round(ISLAND_BOTTOM_GAP * self.s)
         if os.name != "nt":
             return gap
@@ -871,11 +914,11 @@ class VoiceOverlay:
 
     # ---- animación
     def _wave_shape(self):
-        """Onda orgánica que SIEMPRE viaja, con la voz dando la amplitud.
+        """Onda viva que fluye de izquierda a derecha.
 
-        Tres senos con desfase por barra + un bulto que recorre la fila: en
-        silencio queda una fila de puntos vivos y al hablar crece y acelera.
-        El espectro del micro solo añade matiz (normalizado)."""
+        La base fija la silueta de la preview y encima viaja una onda de tres
+        senos. La voz acelera el avance y sube un poco la amplitud, pero las
+        barras no crecen ni se encogen todas a la vez."""
         n = ISLAND_N_BARS
         idx = np.arange(n, dtype=np.float32)
         if self._state == "cancelled":
@@ -884,71 +927,52 @@ class VoiceOverlay:
             p = float(getattr(self, "_cancel_p", 1.0))
             keep = np.clip(1.0 - (p * (n + 1.5) - idx), 0.0, 1.0)
             return (0.06 + 0.42 * keep * (1.0 - p)).astype(np.float32)
+
+        base8 = np.array([0.21, 0.49, 0.30, 0.72, 0.40, 0.58, 0.26, 0.44],
+                         dtype=np.float32)
+        base = np.interp(np.linspace(0.0, len(base8) - 1.0, n),
+                         np.arange(len(base8), dtype=np.float32), base8)
+        flow = (0.22 * np.sin(self._phase * 2.6 - idx * 0.78)
+                + 0.14 * np.sin(self._phase * 4.1 + idx * 1.25 + 1.05)
+                + 0.08 * np.sin(self._phase * 6.6 - idx * 1.75 + 2.15))
+        envelope = 0.90 + 0.10 * np.cos(2.0 * np.pi * (idx + 0.5) / n
+                                       - 0.60 * self._phase)
+
         if self._state == "transcribing":
-            lvl = 0.62
+            speak = 0.55
+            band = 0.0
         else:
             src = np.asarray(self._wave[-8:], dtype=np.float32)
             if src.size < 8:
                 src = np.pad(src, (8 - src.size, 0))
             tgt = np.interp(np.linspace(0.0, 7.0, n), np.arange(8.0), src)
             tgt = np.clip(tgt / 0.05, 0.0, 1.0) ** 0.75
-            self._bands += (tgt - self._bands) * 0.22
-            lvl = 0.14 + 0.86 * self._level
-        base = (0.46
-                + 0.32 * np.sin(self._phase * 2.6 - idx * 0.78)
-                + 0.22 * np.sin(self._phase * 4.1 + idx * 1.25 + 1.05)
-                + 0.12 * np.sin(self._phase * 6.6 - idx * 1.75 + 2.15))
-        # Bulto que recorre la fila de izquierda a derecha (viaje visible).
-        env = 0.76 + 0.24 * np.cos(2.0 * np.pi * (idx + 0.5) / n
-                                   - 0.50 * self._phase)
-        amp = 0.10 + 0.95 * lvl
-        bn = np.clip(self._bands / (float(self._bands.max()) + 1e-3), 0.15, 1.0)
-        shape = 0.68 + 0.32 * bn
-        wave = amp * env * base * shape
-        return np.clip(wave, 0.06, 1.0).astype(np.float32)
+            self._bands += (tgt - self._bands) * 0.30
+            speak = min(1.0, max(0.0, float(self._level)))
+            bn = self._bands / (float(self._bands.max()) + 1e-3)
+            # El espectro abre unas barras y cierra otras: es lo que hace que
+            # la onda parezca voz y no una hinchazón uniforme. Su peso crece
+            # con el volumen, así en silencio no hay ruido visual.
+            band = 0.70 * (bn - float(bn.mean())) * (0.30 + 0.70 * speak)
+
+        # La voz manda: en silencio las líneas son casi puntos y al hablar
+        # crecen hasta el alto del cuerpo. El contraste entre barras se
+        # mantiene (base + espectro), así que se ve profunda, no un bloque.
+        voice = 0.10 + 0.90 * speak
+        wave = 0.05 + (base * 1.05 + flow * envelope * 0.60 + band) * voice
+        wave = np.clip(wave, 0.03, 1.0)
+        # Realza el relieve: aleja las barras de la media sin recortar el pico,
+        # que es lo que da sensación de profundidad al hablar.
+        mid = float(wave.mean())
+        wave = mid + (wave - mid) * (1.0 + 0.55 * speak)
+        return np.clip(wave, 0.02, 1.0).astype(np.float32)
 
     # ---- tarjeta de transcripción
     def _set_text(self, text):
-        content = (text or "").strip()
-        if not content:
-            self._hide_panel()
-            return
-        s = self.s
-        tail = content if len(content) <= self.MAX_TEXT else "…" + content[-(self.MAX_TEXT - 1):]
-        try:
-            self.panel_label.config(text=tail)
-            self.panel.update_idletasks()
-            w = min(max(self.panel_label.winfo_reqwidth()
-                        + round(32 * s), round(220 * s)),
-                    round(self.PANEL_MAX_W * s))
-            h = self.panel_label.winfo_reqheight() + round(20 * s)
-            cx = self._island_x + self.W // 2
-            x = cx - w // 2
-            gap = round(8 * s)
-            if _at_top():
-                # Colgando arriba: la tarjeta crece hacia ABAJO, justo debajo.
-                y = self._island_y + self.BODY_H + gap
-            else:
-                # Píldora abajo: la tarjeta crece hacia ARRIBA, justo encima.
-                # El cuerpo nace en `_island_y + SH` (margen de la sombra arriba).
-                y = self._island_y + self.SH - gap - h
-            self.panel.geometry(f"{w}x{h}+{x}+{y}")
-            round_window_corners(self.panel, 2)
-            if sys.platform.startswith("win"):
-                try:
-                    hwnd = ctypes.windll.user32.GetParent(self.panel.winfo_id())
-                    rr = round(18 * self.s)
-                    rgn = ctypes.windll.gdi32.CreateRoundRectRgn(0, 0, w + 1, h + 1,
-                                                                 rr, rr)
-                    ctypes.windll.user32.SetWindowRgn(hwnd, rgn, True)
-                except Exception:
-                    pass
-            if not self._panel_shown:
-                self.panel.deiconify()
-                self.panel.lift()
-                self._panel_shown = True
-        except Exception:
-            pass
+        # La tarjeta flotante con el texto se retiró: aparecía bajo la isla como
+        # un recuadro oscuro encima de la app y estorbaba más de lo que aportaba.
+        # La isla queda solo con la onda; el texto se lee en el panel.
+        self._hide_panel()
 
     def _hide_panel(self):
         if self._panel_shown:
