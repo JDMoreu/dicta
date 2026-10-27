@@ -230,7 +230,7 @@ SERVER_LOG = os.path.join(SCRIPT_DIR, "whisper_server.log")
 # aqui sale `/state.version` (el panel la pinta como vX.Y.Z) y el log de
 # arranque. El comparador de actualizaciones tambien la usa. `APP_VERSION` se
 # conserva como alias por compatibilidad.
-VERSION = "1.0.9"
+VERSION = "1.0.10"
 APP_VERSION = VERSION
 WHISPER_EXE = os.path.join(RESOURCE_DIR, "whisper_bin", "Release", "whisper-cli.exe")
 # Motores GPU: cada backend vive en su carpeta con su whisper-server + DLLs.
@@ -5788,7 +5788,7 @@ def icon_version():
 
 
 _ICON_ICO_CACHE = {}             # tema -> ruta del .ico OFICIAL
-_ICON_ICO_VER = "9"              # versión del dibujo oficial (nombre del .ico)
+_ICON_ICO_VER = "10"              # versión del dibujo oficial (nombre del .ico)
 
 
 def _official_icon_ico(theme=None):

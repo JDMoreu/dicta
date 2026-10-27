@@ -163,10 +163,11 @@ el punto de inserción, que es lo que hace la app—. El cursor va en el neutro 
 tema (`#F5F5F5` en oscuro, `#0A0A0A` en claro). Es asimétrica a propósito: así no
 se lee como una onda genérica.
 
-**Cada talla se redibuja**: por debajo de 28 px la geometría es entera y sin
-reescalado, para que caiga en la rejilla de píxeles de la barra de tareas; de 28
-a 47 px las barras y el cursor van más gruesos y sin remates; desde 48 px el
-cursor lleva remates (I-beam). El `.ico` trae las tallas de los escalados de
+**Cada talla se redibuja**, pero la marca es siempre la misma —barras con radio
+y cursor completo, con el asta y sus dos remates—: por debajo de 28 px la
+geometría es entera y sin reescalado, para que caiga en la rejilla de píxeles de
+la barra de tareas y los remates bajan a 1 px; de 28 a 47 px el trazo va más
+grueso; desde 48 px es más fino. El `.ico` trae las tallas de los escalados de
 Windows (16, 20, 24, 28, 32, 36, 40, 48, 56, 64, 96, 128 y 256) y la bandeja se
 dibuja a `SM_CXSMICON` y se entrega 1:1: sin tallas exactas el sistema reescala
 y el icono pierde nitidez. El azulejo es **opaco** —blanco puro en claro,

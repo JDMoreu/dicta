@@ -12,12 +12,15 @@ de un borde (el mismo principio que el cuerpo de la isla). La marca se dibuja a
 8x y se reduce (anti-alias limpio) y se recorta contra el azulejo, para que no
 asome por las esquinas redondeadas.
 
-El icono se **adapta a cada talla** (no es un unico PNG reescalado):
+El icono se **adapta a cada talla** (no es un unico PNG reescalado), pero la
+marca es SIEMPRE la completa --barras con radio y cursor con remates--; lo que
+cambia es el grosor del trazo y la rejilla:
 
 * 16-27 px: geometria entera y sin supermuestreo, para que caiga en la rejilla
-  de pixeles y no se emborrone en la barra de tareas.
-* 28-47 px: barras y cursor mas gruesos y sin remates.
-* 48 px en adelante: cursor con remates (I-beam) y trazo mas fino.
+  de pixeles y no se emborrone en la barra de tareas. El cursor lleva sus dos
+  remates, de 1 px.
+* 28-47 px: barras y cursor mas gruesos.
+* 48 px en adelante: trazo mas fino.
 
 El .ico trae las tallas de los escalados de Windows (125 %, 150 %, 175 %,
 200 %): pedir una talla que no existe obliga al sistema a reescalar y ahi se
@@ -138,10 +141,11 @@ def mark_wave_caret(size, bars=ICON_BARS, light=False):
     y acaba en el punto de insercion, que es lo que hace la app. Asimetrica a
     proposito: asi no se confunde con una onda generica.
 
-    Tres geometrias, segun la talla: de 48 px en adelante el cursor lleva
-    remates (I-beam); de 28 a 47 px, barras y cursor mas gruesos y sin remates;
-    por debajo de 28 px, rejilla entera sin reescalado (anti-alias nulo).
-    ``bars`` se conserva por compatibilidad de firma.
+    La marca es la MISMA en todas las tallas: barras con radio y cursor completo
+    (asta con sus dos remates de I-beam). Lo unico que cambia es como se
+    construye: por debajo de 28 px la rejilla es entera, sin reescalado, y los
+    remates bajan a 1 px; de 28 a 47 px el trazo va mas grueso; de 48 px en
+    adelante es mas fino. ``bars`` se conserva por compatibilidad de firma.
     """
     size = int(size)
     if size <= 0:
@@ -157,8 +161,12 @@ def mark_wave_caret(size, bars=ICON_BARS, light=False):
         bw = max(2, int(round(unit)))
         gap = max(1, int(round(unit * 0.55)))
         cg = max(2, int(round(unit * 0.82)))
-        cw = max(1, int(round(unit * 0.55)))
-        total = 3 * bw + 2 * gap + cg + cw
+        cw = max(1, int(round(unit * 0.55)))       # grosor del asta
+        # Los remates son mas anchos que el asta: entran en el reparto, o el
+        # cursor se sale de la caja y el conjunto queda descentrado.
+        capw = max(3, int(round(size * 0.133)))
+        caph = max(1, int(round(size * 0.035)))
+        total = 3 * bw + 2 * gap + cg + capw
         x0 = (size - total) // 2
         img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
         d = ImageDraw.Draw(img)
@@ -166,11 +174,17 @@ def mark_wave_caret(size, bars=ICON_BARS, light=False):
             hh = _snap(size * f, size)
             x = x0 + i * (bw + gap)
             top = (size - hh) // 2
-            d.rectangle([x, top, x + bw - 1, top + hh - 1], fill=acc)
+            d.rounded_rectangle([x, top, x + bw - 1, top + hh - 1],
+                                radius=max(1, bw // 2), fill=acc)
         hc = _snap(size * _CARET_H, size)
-        xc = x0 + 3 * bw + 2 * gap + cg
+        cx = x0 + 3 * bw + 2 * gap + cg            # bloque del cursor
+        xc = cx + (capw - cw) // 2                 # asta centrada en los remates
         top = (size - hc) // 2
-        d.rectangle([xc, top, xc + cw - 1, top + hc - 1], fill=car)
+        d.rounded_rectangle([xc, top, xc + cw - 1, top + hc - 1],
+                            radius=max(1, cw // 2), fill=car)
+        for y in (top, top + hc - caph):           # remate de arriba y de abajo
+            d.rounded_rectangle([cx, y, cx + capw - 1, y + caph - 1],
+                                radius=max(1, caph // 2), fill=car)
         return img
 
     full = size >= 48
@@ -197,11 +211,15 @@ def mark_wave_caret(size, bars=ICON_BARS, light=False):
         d = ImageDraw.Draw(m)
         d.rounded_rectangle([sx * u, 34 * u, (sx + sw) * u - 1, 146 * u - 1],
                             radius=sw * u / 2.0, fill=255)
-        if full:
-            for y in (34, 140):
-                d.rounded_rectangle([126 * u, y * u, 150 * u - 1,
-                                     (y + 6) * u - 1],
-                                    radius=3 * u, fill=255)
+        # Remates en TODAS las tallas grandes, centrados en el asta: 24
+        # unidades de ancho son 3x el asta fina y 2x la gruesa, que es lo que
+        # pide una I-beam. Con 24 en el asta fina esto da 126..150, el mismo
+        # remate que ya llevaba la talla grande.
+        cx = sx + sw / 2.0 - 12.0
+        for y in (34, 140):
+            d.rounded_rectangle([cx * u, y * u, (cx + 24.0) * u - 1,
+                                 (y + 6) * u - 1],
+                                radius=3 * u, fill=255)
         return m
 
     wave = _mark_from_mask(size, bars_mask, _accent(light))

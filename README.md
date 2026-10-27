@@ -30,7 +30,7 @@ está adjunto en la release.*
 
 ## Cómo se usa (sin instalar nada)
 
-1. Descarga **`dicta-portable-1.0.9-windows-x64.zip`** desde
+1. Descarga **`dicta-portable-1.0.10-windows-x64.zip`** desde
    [Releases](https://github.com/JDMoreu/dicta/releases/latest).
 2. Descomprímelo en una carpeta escribible (p. ej. `%LOCALAPPDATA%\Programs\dicta`).
 3. Ejecuta **`dicta.exe`** y acepta el aviso de administrador.
@@ -57,7 +57,7 @@ en `models\`, se descarga solo la primera vez desde HuggingFace.
 
 Secciones **Dictado**, **Diccionario**, **Reunión**, **Audios y documentos**,
 **Atajos de teclado** y **Apariencia**. En el pie, el motor activo y la versión
-(`Actualizado · v1.0.9`).
+(`Actualizado · v1.0.10`).
 
 | Dictado: idioma, motor, modelo y micrófono | Reunión: grabando sistema + micrófono |
 |---|---|

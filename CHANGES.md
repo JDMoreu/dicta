@@ -4,6 +4,33 @@ Fecha: 2026-07-10 · Acompañado del skill Impeccable (v4.5.0) para el diseño d
 
 Cada cambio incluye la validación concreta que lo confirmó.
 
+## v1.0.10 — 26 de octubre de 2026
+
+**El icono pasa a ser el completo en todas las tallas.**
+
+- Hasta ahora la marca se simplificaba por debajo de 48 px: de 28 a 47 px el
+  cursor iba **sin remates** y por debajo de 28 px las barras y el cursor eran
+  **rectángulos secos**.
+- Ahora las barras son **cápsulas** (radio `bw/2`) en todas las tallas y el
+  cursor lleva su asta y **sus dos remates** en las tres geometrías: 1 px en la
+  rejilla pequeña (donde entran en el reparto, o el cursor se sale y el
+  conjunto queda descentrado), 24 unidades centradas en el asta de 28 a 47 px y
+  el remate de siempre de 48 px en adelante —con el asta fina da 126..150, el
+  mismo que ya llevaba la talla grande, así que ahí no cambia ni un píxel.
+- `_ICON_ICO_VER` 9 → **10**: cambian el nombre del `.ico` cacheado y la URL del
+  favicon, así que la ventana y el panel no siguen enseñando el dibujo viejo.
+
+Validación. Hoja `assets/_icon_check.png` (16/20/24/32/48 px en los dos temas y
+la fila a tamaño real) y comprobación automática contra `HEAD`:
+
+| Comprobación | Resultado |
+|---|---|
+| `official_image` (9 tallas × 2 temas) | cuadrado, esquina transparente, azulejo opaco |
+| `wave_mark` (la onda de la isla) | **idéntico** a HEAD en 16/20/24/32/64/128 px |
+| Remates del cursor | presentes en 16, 20, 24, 28, 32, 40, 48, 64, 128 y 256 px |
+| Barras | cápsula (la punta mide menos que el centro) en 24 px y más |
+| `.ico` | 13 capas cuadradas; **cambian** 16/24/32/40 y salen **idénticas** 48/64/256 |
+
 ## v1.0.9 — 25 de octubre de 2026
 
 **La isla cambia de forma según el borde y el tema.**
