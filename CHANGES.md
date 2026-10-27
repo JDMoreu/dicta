@@ -6,7 +6,10 @@ Cada cambio incluye la validación concreta que lo confirmó.
 
 ## v1.0.10 — 26 de octubre de 2026
 
-**El icono pasa a ser el completo en todas las tallas.**
+**El icono pasa a ser el completo en todas las tallas. Y arranque con Windows
+desde Ajustes.**
+
+### Icono
 
 - Hasta ahora la marca se simplificaba por debajo de 48 px: de 28 a 47 px el
   cursor iba **sin remates** y por debajo de 28 px las barras y el cursor eran
@@ -30,6 +33,30 @@ la fila a tamaño real) y comprobación automática contra `HEAD`:
 | Remates del cursor | presentes en 16, 20, 24, 28, 32, 40, 48, 64, 128 y 256 px |
 | Barras | cápsula (la punta mide menos que el centro) en 24 px y más |
 | `.ico` | 13 capas cuadradas; **cambian** 16/24/32/40 y salen **idénticas** 48/64/256 |
+
+### Arranque con Windows
+
+- Interruptor **Iniciar con Windows** en *Ajuste → Aplicación*: escribe (o
+  borra) la entrada `Dicta` de
+  `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` con `--no-panel`, así que
+  al encender el PC queda **en la bandeja**, con el atajo global listo y sin
+  abrir el panel. Es por usuario: no pide administrador ni toca nada del sistema,
+  y borrar la entrada lo deshace del todo.
+- La **verdad es la entrada del registro**, no una copia en `dicta_config.json`:
+  `/state.start_with_windows` la lee en cada petición, así que si se borra por
+  fuera el interruptor aparece apagado. Si Windows no deja escribirla, se
+  registra el error y el interruptor vuelve a su sitio (no miente).
+- El **instalador** deja el mismo comando (con `--no-panel`) cuando se marca la
+  tarea de inicio automático, para que las dos vías coincidan.
+
+Validación: lógica probada con un `winreg` simulado (nombre, tipo `REG_SZ`, el
+comando exacto en la copia de desarrollo y en el `.exe`, alta/lectura/baja) y el
+circuito real comprobado en la app en vivo (`POST /rpc` → hilo de la UI →
+`start_with_windows` en `/state` → fila e interruptor en el árbol de
+accesibilidad del panel). La escritura real en HKCU no se pudo ejercitar desde
+este shell porque el agente ejecuta Python con un token restringido
+(`[WinError 5]`), que la app registra y maneja sin romperse; la clave concede
+`FullControl` al usuario, así que con Dicta abierto de forma normal sí escribe.
 
 ## v1.0.9 — 25 de octubre de 2026
 

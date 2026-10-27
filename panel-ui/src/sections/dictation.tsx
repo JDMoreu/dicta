@@ -499,6 +499,22 @@ export function DictationSection() {
 
         <SettingsGroup title={t("ui.grpApp")}>
           <SettingsRow
+            icon="power"
+            title={t("ui.autostartTitle")}
+            sub={t("ui.autostartHint")}
+            control={
+              <Switch
+                checked={!!state.start_with_windows}
+                aria-label={t("ui.autostartTitle")}
+                onCheckedChange={(on) => {
+                  patch({ start_with_windows: on })
+                  void send("start_with_windows", on)
+                }}
+                className="data-[state=unchecked]:bg-[var(--text-3)]/55"
+              />
+            }
+          />
+          <SettingsRow
             icon="refresh"
             title={t("ui.updAutoTitle")}
             sub={t("ui.updAutoHint")}

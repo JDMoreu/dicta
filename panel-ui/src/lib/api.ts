@@ -178,6 +178,7 @@ export interface AppState {
   version: string
   update: UpdateState
   check_updates: boolean
+  start_with_windows?: boolean
   queue: QueueItem[]
   uploads: Upload[] | null
   meeting: Meeting

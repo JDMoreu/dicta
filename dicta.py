@@ -339,6 +339,66 @@ def system_theme(default="light"):
         return default
 
 
+# ------------------------------------------- arrancar con Windows (bandeja)
+# Una sola entrada en HKCU\...\Run. La escribe la app con --no-panel: al
+# encender el PC queda en la bandeja, con el atajo global listo y sin ventana
+# delante (que es como se usa). Es HKCU, asi que no pide administrador ni toca
+# nada del sistema: borrar la entrada lo deshace del todo.
+_STARTUP_KEY = r"Software\Microsoft\Windows\CurrentVersion\Run"
+_STARTUP_NAME = "Dicta"
+
+
+def startup_command():
+    """Comando de arranque: dicta en la bandeja, sin abrir el panel.
+
+    Congelado (el .exe): ``"...\\dicta.exe" --no-panel``. Desde el codigo:
+    ``"...\\pythonw.exe" "...\\dicta.py" --no-panel``, para que el arranque
+    automatico funcione tambien en la copia de desarrollo.
+    """
+    exe = os.path.abspath(sys.executable)
+    if getattr(sys, "frozen", False):
+        return f'"{exe}" --no-panel'
+    script = os.path.abspath(sys.argv[0] or os.path.join(SCRIPT_DIR, "dicta.py"))
+    return f'"{exe}" "{script}" --no-panel'
+
+
+def startup_enabled():
+    """True si hay entrada de arranque (tambien la que pone el instalador)."""
+    if os.name != "nt":
+        return False
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _STARTUP_KEY) as key:
+            value, _ = winreg.QueryValueEx(key, _STARTUP_NAME)
+        return bool(str(value or "").strip())
+    except Exception:
+        return False
+
+
+def set_startup(enabled):
+    """Crea o borra la entrada de arranque y devuelve el estado REAL.
+
+    Se lee despues de escribir: si Windows no la dejo crear (politicas, disco),
+    el panel enseña lo que hay y no lo que se pidio.
+    """
+    if os.name != "nt":
+        return False
+    import winreg
+    if enabled:
+        with winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, _STARTUP_KEY, 0,
+                                winreg.KEY_SET_VALUE) as key:
+            winreg.SetValueEx(key, _STARTUP_NAME, 0, winreg.REG_SZ,
+                              startup_command())
+    else:
+        try:
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, _STARTUP_KEY, 0,
+                                winreg.KEY_SET_VALUE) as key:
+                winreg.DeleteValue(key, _STARTUP_NAME)
+        except FileNotFoundError:
+            pass
+    return startup_enabled()
+
+
 # ------------------------------------------ actualizacion desde la propia app
 # PROMESA DE PRODUCTO (NO NEGOCIABLE): el AUDIO y el TEXTO de dicta NUNCA salen
 # del equipo. La UNICA cosa que puede salir a la red es la COMPROBACION DE
@@ -6813,6 +6873,23 @@ class Overlay:
         except Exception:
             pass
 
+    def on_start_with_windows(self, value):
+        """Arranque con Windows: escribe (o borra) la entrada de HKCU\\...\\Run.
+
+        Va por el hilo de la UI porque el panel solo manda eventos; la entrada
+        es por usuario, asi que no hace falta administrador. Se devuelve el
+        estado REAL (lo que quedo escrito), no lo que se pidio.
+        """
+        want = bool(value) if not isinstance(value, str) \
+            else value.strip().lower() in ("1", "true", "on", "si", "sí", "yes")
+        try:
+            real = set_startup(want)
+        except Exception as exc:                       # noqa: BLE001
+            log(f"Arranque con Windows: no se pudo cambiar ({exc})")
+            return
+        log(f"Arranque con Windows: {'activado' if real else 'desactivado'}"
+            + (f" — {startup_command()}" if real else ""))
+
     def on_cancel_key(self, spec):
         """Aplica el atajo de cancelar en caliente y lo persiste."""
         spec = "+".join(part.strip().lower() for part in str(spec or "").split("+"))
@@ -7126,6 +7203,10 @@ class Overlay:
                 # rellena tras la PRIMERA comprobacion (y por eso mentia al
                 # arrancar: salia «off» con el ajuste encendido).
                 "check_updates": bool(config_get("check_updates", True)),
+                # Arranque con Windows: se lee de HKCU\...\Run (la verdad es la
+                # entrada, no una copia en dicta_config.json), asi que si se
+                # borra por fuera el panel lo enseña apagado.
+                "start_with_windows": startup_enabled(),
                 "queue": queue_for_state(),
                 "uploads": _uploads.snapshot(),
                 "meeting": _meeting.snapshot(),
@@ -7253,7 +7334,7 @@ class Overlay:
         if action in ("model", "engine", "language", "theme", "sens", "mic",
                       "dictionary", "meeting_source", "meeting_mic",
                       "island_pos", "island_palette", "voice_threshold",
-                      "silence_wait"):
+                      "silence_wait", "start_with_windows"):
             self.ui_events.put((action, value))
 
     def open_panel(self):
@@ -7322,6 +7403,8 @@ class Overlay:
                     config_set("meeting_mic", bool(value))
                     log(f"Micrófono en la reunión: "
                         f"{'sí' if value else 'no'}")
+                elif kind == "start_with_windows":
+                    self.on_start_with_windows(value)
                 self.tray.refresh()
 
     # ---- ciclo de vida
